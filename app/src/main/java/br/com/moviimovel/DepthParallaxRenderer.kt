@@ -1,12 +1,13 @@
 package br.com.moviimovel
 
 import android.graphics.Bitmap
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
 class DepthParallaxRenderer {
 
-    private var bitmapGuardado: Bitmap? = null
+    private var bitmapAtual: Bitmap? = null
     private var pixelsOriginais = IntArray(0)
     private var larguraOriginal = 0
     private var alturaOriginal = 0
@@ -21,36 +22,36 @@ class DepthParallaxRenderer {
     ): Bitmap {
         prepararBitmap(bitmapOriginal)
 
-        val largura = max(1, larguraSaida)
-        val altura = max(1, alturaSaida)
+        val larguraFinal = max(1, larguraSaida)
+        val alturaFinal = max(1, alturaSaida)
 
-        val pixelsSaida = IntArray(largura * altura)
+        val pixelsSaida = IntArray(larguraFinal * alturaFinal)
 
         val escalaPreenchimento = max(
-            largura.toFloat() / larguraOriginal.toFloat(),
-            altura.toFloat() / alturaOriginal.toFloat()
+            larguraFinal.toFloat() / larguraOriginal.toFloat(),
+            alturaFinal.toFloat() / alturaOriginal.toFloat()
         )
 
         val larguraExibida = larguraOriginal * escalaPreenchimento
         val alturaExibida = alturaOriginal * escalaPreenchimento
 
-        val corteX = (larguraExibida - largura) / 2f
-        val corteY = (alturaExibida - altura) / 2f
+        val corteX = (larguraExibida - larguraFinal) / 2f
+        val corteY = (alturaExibida - alturaFinal) / 2f
 
         val movimento = calcularMovimento(
             modo = modo,
             progresso = progresso,
-            largura = largura,
-            altura = altura
+            largura = larguraFinal,
+            altura = alturaFinal
         )
 
-        val centroX = largura / 2f
-        val centroY = altura / 2f
+        val centroX = larguraFinal / 2f
+        val centroY = alturaFinal / 2f
 
-        for (y in 0 until altura) {
-            for (x in 0 until largura) {
-                val u = x.toFloat() / largura.toFloat()
-                val v = y.toFloat() / altura.toFloat()
+        for (y in 0 until alturaFinal) {
+            for (x in 0 until larguraFinal) {
+                val u = x.toFloat() / larguraFinal.toFloat()
+                val v = y.toFloat() / alturaFinal.toFloat()
 
                 val profundidade = profundidadeNoPonto(
                     depthResult = depthResult,
@@ -59,45 +60,50 @@ class DepthParallaxRenderer {
                 )
 
                 /*
-                 * Partes próximas expandem e se deslocam mais.
-                 * Fundo se desloca pouco.
+                 * O fundo se move pouco.
+                 * O primeiro plano se move mais, mas sem exagero.
                  */
-                val intensidade = 0.18f + (profundidade * 0.82f)
+                val intensidade = 0.30f + (profundidade * 0.70f)
 
                 val fatorZoom = 1f + (
                     movimento.avanco * profundidade
                 )
 
-                val destinoRelativoX = x - centroX
-                val destinoRelativoY = y - centroY
+                val relativoX = x - centroX
+                val relativoY = y - centroY
 
-                val origemNaTelaX = centroX + (
-                    destinoRelativoX / fatorZoom
-                ) - (movimento.deslocamentoX * intensidade)
+                val origemTelaX = centroX + (
+                    relativoX / fatorZoom
+                ) - (
+                    movimento.deslocamentoX * intensidade
+                )
 
-                val origemNaTelaY = centroY + (
-                    destinoRelativoY / fatorZoom
-                ) - (movimento.deslocamentoY * intensidade)
+                val origemTelaY = centroY + (
+                    relativoY / fatorZoom
+                ) - (
+                    movimento.deslocamentoY * intensidade
+                )
 
                 val origemOriginalX = (
-                    origemNaTelaX + corteX
+                    origemTelaX + corteX
                 ) / escalaPreenchimento
 
                 val origemOriginalY = (
-                    origemNaTelaY + corteY
+                    origemTelaY + corteY
                 ) / escalaPreenchimento
 
-                pixelsSaida[(y * largura) + x] = amostrarPixel(
-                    x = origemOriginalX,
-                    y = origemOriginalY
-                )
+                pixelsSaida[(y * larguraFinal) + x] =
+                    amostrarPixelBilinear(
+                        x = origemOriginalX,
+                        y = origemOriginalY
+                    )
             }
         }
 
         return Bitmap.createBitmap(
             pixelsSaida,
-            largura,
-            altura,
+            larguraFinal,
+            alturaFinal,
             Bitmap.Config.ARGB_8888
         )
     }
@@ -105,11 +111,11 @@ class DepthParallaxRenderer {
     private fun prepararBitmap(
         bitmap: Bitmap
     ) {
-        if (bitmapGuardado === bitmap) {
+        if (bitmapAtual === bitmap) {
             return
         }
 
-        bitmapGuardado = bitmap
+        bitmapAtual = bitmap
         larguraOriginal = bitmap.width
         alturaOriginal = bitmap.height
 
@@ -128,23 +134,107 @@ class DepthParallaxRenderer {
         )
     }
 
-    private fun amostrarPixel(
+    private fun amostrarPixelBilinear(
         x: Float,
         y: Float
     ): Int {
-        val xSeguro = min(
+        val xLimitado = min(
+            larguraOriginal - 1.001f,
+            max(0f, x)
+        )
+
+        val yLimitado = min(
+            alturaOriginal - 1.001f,
+            max(0f, y)
+        )
+
+        val x0 = floor(xLimitado).toInt()
+        val y0 = floor(yLimitado).toInt()
+
+        val x1 = min(
             larguraOriginal - 1,
-            max(0, x.toInt())
+            x0 + 1
         )
 
-        val ySeguro = min(
+        val y1 = min(
             alturaOriginal - 1,
-            max(0, y.toInt())
+            y0 + 1
         )
 
-        return pixelsOriginais[
-            (ySeguro * larguraOriginal) + xSeguro
-        ]
+        val dx = xLimitado - x0
+        val dy = yLimitado - y0
+
+        val cor00 = pixelsOriginais[(y0 * larguraOriginal) + x0]
+        val cor10 = pixelsOriginais[(y0 * larguraOriginal) + x1]
+        val cor01 = pixelsOriginais[(y1 * larguraOriginal) + x0]
+        val cor11 = pixelsOriginais[(y1 * larguraOriginal) + x1]
+
+        val alpha = interpolarCanal(
+            (cor00 ushr 24) and 0xFF,
+            (cor10 ushr 24) and 0xFF,
+            (cor01 ushr 24) and 0xFF,
+            (cor11 ushr 24) and 0xFF,
+            dx,
+            dy
+        )
+
+        val vermelho = interpolarCanal(
+            (cor00 shr 16) and 0xFF,
+            (cor10 shr 16) and 0xFF,
+            (cor01 shr 16) and 0xFF,
+            (cor11 shr 16) and 0xFF,
+            dx,
+            dy
+        )
+
+        val verde = interpolarCanal(
+            (cor00 shr 8) and 0xFF,
+            (cor10 shr 8) and 0xFF,
+            (cor01 shr 8) and 0xFF,
+            (cor11 shr 8) and 0xFF,
+            dx,
+            dy
+        )
+
+        val azul = interpolarCanal(
+            cor00 and 0xFF,
+            cor10 and 0xFF,
+            cor01 and 0xFF,
+            cor11 and 0xFF,
+            dx,
+            dy
+        )
+
+        return (
+            (alpha shl 24) or
+                (vermelho shl 16) or
+                (verde shl 8) or
+                azul
+            )
+    }
+
+    private fun interpolarCanal(
+        c00: Int,
+        c10: Int,
+        c01: Int,
+        c11: Int,
+        dx: Float,
+        dy: Float
+    ): Int {
+        val parteSuperior = c00 + ((c10 - c00) * dx)
+        val parteInferior = c01 + ((c11 - c01) * dx)
+
+        val resultado = parteSuperior + (
+            (parteInferior - parteSuperior) * dy
+        )
+
+        return min(
+            255,
+            max(
+                0,
+                resultado.toInt()
+            )
+        )
     }
 
     private fun profundidadeNoPonto(
@@ -182,11 +272,11 @@ class DepthParallaxRenderer {
         return when (modo) {
             "Pan Profundo" -> {
                 Movimento3D(
-                    avanco = 0.045f,
+                    avanco = 0.012f,
                     deslocamentoX = (
-                        -largura * 0.035f
+                        -largura * 0.007f
                     ) + (
-                        progresso * largura * 0.070f
+                        progresso * largura * 0.014f
                     ),
                     deslocamentoY = 0f
                 )
@@ -194,36 +284,36 @@ class DepthParallaxRenderer {
 
             "Diagonal 3D" -> {
                 Movimento3D(
-                    avanco = 0.080f,
+                    avanco = 0.018f,
                     deslocamentoX = (
-                        -largura * 0.030f
+                        -largura * 0.006f
                     ) + (
-                        progresso * largura * 0.060f
+                        progresso * largura * 0.012f
                     ),
                     deslocamentoY = (
-                        altura * 0.025f
+                        altura * 0.005f
                     ) - (
-                        progresso * altura * 0.050f
+                        progresso * altura * 0.010f
                     )
                 )
             }
 
             else -> {
                 /*
-                 * Entrada 3D:
-                 * avanço controlado, sem passos e sem tremor.
+                 * Entrada 3D estabilizada:
+                 * sem tremor e com deslocamento curto.
                  */
                 Movimento3D(
-                    avanco = 0.115f * progresso,
+                    avanco = 0.030f * progresso,
                     deslocamentoX = (
-                        -largura * 0.010f
+                        -largura * 0.0025f
                     ) + (
-                        progresso * largura * 0.020f
+                        progresso * largura * 0.005f
                     ),
                     deslocamentoY = (
-                        altura * 0.006f
+                        altura * 0.002f
                     ) - (
-                        progresso * altura * 0.012f
+                        progresso * altura * 0.004f
                     )
                 )
             }

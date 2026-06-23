@@ -112,7 +112,7 @@ fun MoviImovelApp() {
     }
 
     val transition = rememberInfiniteTransition(
-        label = "movimento_3d_real"
+        label = "movimento_3d"
     )
 
     val progressoBruto by transition.animateFloat(
@@ -120,7 +120,7 @@ fun MoviImovelApp() {
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(
-                durationMillis = 5000,
+                durationMillis = 6500,
                 easing = FastOutSlowInEasing
             ),
             repeatMode = RepeatMode.Reverse
@@ -128,7 +128,11 @@ fun MoviImovelApp() {
         label = "progresso_3d"
     )
 
-    val etapaMovimento = (progressoBruto * 36f).toInt()
+    /*
+     * Menos quadros calculados:
+     * preserva o celular e evita renderização excessiva.
+     */
+    val etapaMovimento = (progressoBruto * 18f).toInt()
 
     var larguraPreview by remember {
         mutableIntStateOf(1)
@@ -161,7 +165,7 @@ fun MoviImovelApp() {
             larguraPreview > 1 &&
             alturaPreview > 1
         ) {
-            val progresso = etapaMovimento / 36f
+            val progresso = etapaMovimento / 18f
 
             val resultado = withContext(Dispatchers.Default) {
                 renderer.renderizar(
@@ -169,8 +173,8 @@ fun MoviImovelApp() {
                     depthResult = depth,
                     modo = movimentoAtual,
                     progresso = progresso,
-                    larguraSaida = minOf(larguraPreview, 420),
-                    alturaSaida = minOf(alturaPreview, 520)
+                    larguraSaida = larguraPreview,
+                    alturaSaida = alturaPreview
                 )
             }
 
@@ -197,7 +201,7 @@ fun MoviImovelApp() {
                 )
 
                 Text(
-                    text = "Parallax 3D real por mapa de profundidade",
+                    text = "Parallax 3D por profundidade real",
                     color = Color(0xFFB8C2C8),
                     fontSize = 15.sp
                 )
@@ -251,6 +255,7 @@ fun MoviImovelApp() {
                         val foto = fotoSelecionada ?: return@Button
 
                         processandoMapa = true
+                        mostrandoMovimento = false
                         mensagem = "Criando mapa de profundidade real..."
 
                         scope.launch(Dispatchers.Default) {
@@ -261,7 +266,6 @@ fun MoviImovelApp() {
                                 withContext(Dispatchers.Main) {
                                     depthResult = resultado
                                     mostrandoMapa = true
-                                    mostrandoMovimento = false
                                     processandoMapa = false
                                     mensagem = "Mapa pronto. Agora teste o movimento 3D."
                                 }
@@ -299,9 +303,9 @@ fun MoviImovelApp() {
                     onClick = {
                         mostrandoMapa = false
                         mostrandoMovimento = true
-                        mensagem = "Prévia 3D ativa. Regiões próximas devem mover mais."
+                        mensagem = "Movimento com profundidade ativado."
                     },
-                    enabled = depthResult != null,
+                    enabled = depthResult != null && !processandoMapa,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
@@ -330,7 +334,7 @@ fun MoviImovelApp() {
                         mostrandoMapa = false
                         mostrandoMovimento = true
                     },
-                    enabled = depthResult != null,
+                    enabled = depthResult != null && !processandoMapa,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
@@ -353,7 +357,7 @@ fun MoviImovelApp() {
                         mostrandoMovimento = false
                         mostrandoMapa = !mostrandoMapa
                     },
-                    enabled = depthResult != null,
+                    enabled = depthResult != null && !processandoMapa,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(46.dp),
