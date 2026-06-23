@@ -12,11 +12,18 @@ import java.nio.ByteOrder
 import kotlin.math.max
 import kotlin.math.min
 
+data class DepthResult(
+    val visualMap: Bitmap,
+    val width: Int,
+    val height: Int,
+    val nearValues: FloatArray
+)
+
 class DepthEstimator(
     private val context: Context
 ) {
 
-    fun gerarMapaProfundidade(bitmapOriginal: Bitmap): Bitmap {
+    fun gerarProfundidade(bitmapOriginal: Bitmap): DepthResult {
         val interpreter = Interpreter(
             carregarModelo(),
             Interpreter.Options().apply {
@@ -42,15 +49,16 @@ class DepthEstimator(
 
             val entradaNchw = inputShape[1] == 3
 
-            val inputHeight: Int
-            val inputWidth: Int
-
-            if (entradaNchw) {
-                inputHeight = inputShape[2]
-                inputWidth = inputShape[3]
+            val inputHeight = if (entradaNchw) {
+                inputShape[2]
             } else {
-                inputHeight = inputShape[1]
-                inputWidth = inputShape[2]
+                inputShape[1]
+            }
+
+            val inputWidth = if (entradaNchw) {
+                inputShape[3]
+            } else {
+                inputShape[2]
             }
 
             val bitmapSoftware = converterParaBitmapSoftware(bitmapOriginal)
@@ -87,7 +95,6 @@ class DepthEstimator(
                 .order(ByteOrder.nativeOrder())
 
             interpreter.run(inputBuffer, outputBuffer)
-
             outputBuffer.rewind()
 
             val valores = FloatArray(outputElements)
@@ -98,7 +105,7 @@ class DepthEstimator(
 
             val tamanhoSaida = descobrirTamanhoSaida(outputShape)
 
-            return converterSaidaParaBitmap(
+            return criarResultadoProfundidade(
                 valores = valores,
                 largura = tamanhoSaida.first,
                 altura = tamanhoSaida.second
@@ -121,16 +128,16 @@ class DepthEstimator(
         }
     }
 
-    private fun converterParaBitmapSoftware(bitmapOriginal: Bitmap): Bitmap {
+    private fun converterParaBitmapSoftware(
+        bitmapOriginal: Bitmap
+    ): Bitmap {
         val bitmapSoftware = Bitmap.createBitmap(
             bitmapOriginal.width,
             bitmapOriginal.height,
             Bitmap.Config.ARGB_8888
         )
 
-        val canvas = android.graphics.Canvas(bitmapSoftware)
-
-        canvas.drawBitmap(
+        android.graphics.Canvas(bitmapSoftware).drawBitmap(
             bitmapOriginal,
             0f,
             0f,
@@ -162,21 +169,12 @@ class DepthEstimator(
             altura
         )
 
-        val mediaR = 0.485f
-        val mediaG = 0.456f
-        val mediaB = 0.406f
-
-        val desvioR = 0.229f
-        val desvioG = 0.224f
-        val desvioB = 0.225f
-
         fun normalizar(
             valor: Int,
             media: Float,
             desvio: Float
         ): Float {
-            val zeroUm = valor / 255f
-            return (zeroUm - media) / desvio
+            return ((valor / 255f) - media) / desvio
         }
 
         if (entradaNchw) {
@@ -189,9 +187,9 @@ class DepthEstimator(
                     }
 
                     val normalizado = when (canal) {
-                        0 -> normalizar(valor, mediaR, desvioR)
-                        1 -> normalizar(valor, mediaG, desvioG)
-                        else -> normalizar(valor, mediaB, desvioB)
+                        0 -> normalizar(valor, 0.485f, 0.229f)
+                        1 -> normalizar(valor, 0.456f, 0.224f)
+                        else -> normalizar(valor, 0.406f, 0.225f)
                     }
 
                     buffer.putFloat(normalizado)
@@ -200,27 +198,15 @@ class DepthEstimator(
         } else {
             for (pixel in pixels) {
                 buffer.putFloat(
-                    normalizar(
-                        Color.red(pixel),
-                        mediaR,
-                        desvioR
-                    )
+                    normalizar(Color.red(pixel), 0.485f, 0.229f)
                 )
 
                 buffer.putFloat(
-                    normalizar(
-                        Color.green(pixel),
-                        mediaG,
-                        desvioG
-                    )
+                    normalizar(Color.green(pixel), 0.456f, 0.224f)
                 )
 
                 buffer.putFloat(
-                    normalizar(
-                        Color.blue(pixel),
-                        mediaB,
-                        desvioB
-                    )
+                    normalizar(Color.blue(pixel), 0.406f, 0.225f)
                 )
             }
         }
@@ -230,18 +216,17 @@ class DepthEstimator(
         return buffer
     }
 
-    private fun descobrirTamanhoSaida(shape: IntArray): Pair<Int, Int> {
+    private fun descobrirTamanhoSaida(
+        shape: IntArray
+    ): Pair<Int, Int> {
         return when (shape.size) {
-            4 -> {
-                when {
-                    shape[1] == 1 -> Pair(shape[3], shape[2])
-                    shape[3] == 1 -> Pair(shape[2], shape[1])
-                    else -> Pair(shape[3], shape[2])
-                }
+            4 -> when {
+                shape[1] == 1 -> Pair(shape[3], shape[2])
+                shape[3] == 1 -> Pair(shape[2], shape[1])
+                else -> Pair(shape[3], shape[2])
             }
 
             3 -> Pair(shape[2], shape[1])
-
             2 -> Pair(shape[1], shape[0])
 
             else -> throw IllegalStateException(
@@ -250,11 +235,11 @@ class DepthEstimator(
         }
     }
 
-    private fun converterSaidaParaBitmap(
+    private fun criarResultadoProfundidade(
         valores: FloatArray,
         largura: Int,
         altura: Int
-    ): Bitmap {
+    ): DepthResult {
         val totalPixels = largura * altura
 
         if (valores.size < totalPixels) {
@@ -267,13 +252,13 @@ class DepthEstimator(
         var maximo = -Float.MAX_VALUE
 
         for (i in 0 until totalPixels) {
-            val valor = valores[i]
-
-            if (valor < minimo) minimo = valor
-            if (valor > maximo) maximo = valor
+            if (valores[i] < minimo) minimo = valores[i]
+            if (valores[i] > maximo) maximo = valores[i]
         }
 
         val intervalo = max(0.00001f, maximo - minimo)
+
+        val nearValues = FloatArray(totalPixels)
         val pixels = IntArray(totalPixels)
 
         for (i in 0 until totalPixels) {
@@ -283,27 +268,33 @@ class DepthEstimator(
              * Branco = mais perto.
              * Preto = mais longe.
              */
-            val invertido = 1f - normalizado
+            val perto = 1f - normalizado
+
+            nearValues[i] = perto
+
             val cinza = min(
                 255,
                 max(
                     0,
-                    (invertido * 255f).toInt()
+                    (perto * 255f).toInt()
                 )
             )
 
-            pixels[i] = Color.rgb(
-                cinza,
-                cinza,
-                cinza
-            )
+            pixels[i] = Color.rgb(cinza, cinza, cinza)
         }
 
-        return Bitmap.createBitmap(
+        val visualMap = Bitmap.createBitmap(
             pixels,
             largura,
             altura,
             Bitmap.Config.ARGB_8888
+        )
+
+        return DepthResult(
+            visualMap = visualMap,
+            width = largura,
+            height = altura,
+            nearValues = nearValues
         )
     }
 }
