@@ -25,36 +25,28 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Instalar cliente Hugging Face
-        run: |
-          python -m pip install --upgrade pip
-          pip install "huggingface_hub[hf_xet]"
-
-      - name: Baixar modelo real de profundidade
+      - name: Baixar modelo real Depth Anything V2
         run: |
           rm -rf app/src/main/assets
           mkdir -p app/src/main/assets
 
-          hf download \
-            qualcomm/Depth-Anything \
-            Depth-Anything_float.tflite \
-            --local-dir app/src/main/assets
+          curl -fL \
+            --retry 3 \
+            --retry-delay 3 \
+            "https://huggingface.co/qualcomm/Depth-Anything-V2/resolve/a09c7e962a6bd3b3c305c9de373e856b1f026cb1/Depth-Anything-V2.tflite?download=true" \
+            -o app/src/main/assets/depth_anything_v2.tflite
 
-          mv \
-            app/src/main/assets/Depth-Anything_float.tflite \
-            app/src/main/assets/depth_anything_v2.tflite
-
-          echo "=== MODELO BAIXADO ==="
+          echo "=== ARQUIVO BAIXADO ==="
           ls -lh app/src/main/assets/depth_anything_v2.tflite
 
-      - name: Confirmar tamanho do modelo
+      - name: Confirmar que o modelo é real
         run: |
           TAMANHO=$(stat -c%s app/src/main/assets/depth_anything_v2.tflite)
 
-          echo "Tamanho do modelo em bytes: $TAMANHO"
+          echo "Tamanho em bytes: $TAMANHO"
 
           if [ "$TAMANHO" -lt 80000000 ]; then
-            echo "ERRO: modelo pequeno demais. Download inválido."
+            echo "ERRO: o arquivo baixado não é o modelo real de profundidade."
             exit 1
           fi
 
