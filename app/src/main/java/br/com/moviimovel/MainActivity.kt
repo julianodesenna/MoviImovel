@@ -10,7 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -44,16 +45,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 class MainActivity : ComponentActivity() {
 
@@ -68,9 +74,9 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MoviImovelApp() {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
 
-    var movimento by remember { mutableStateOf("Gimbal") }
+    var modo by remember { mutableStateOf("Caminhada") }
     var fotoSelecionada by remember { mutableStateOf<Bitmap?>(null) }
 
     val seletorFoto = rememberLauncherForActivityResult(
@@ -87,7 +93,7 @@ fun MoviImovelApp() {
     MaterialTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = Color(0xFF101417)
+            color = Color(0xFF0F1417)
         ) {
             Column(
                 modifier = Modifier
@@ -103,21 +109,21 @@ fun MoviImovelApp() {
                 )
 
                 Text(
-                    text = "Movimento profissional para fotos de imóveis",
+                    text = "Simulação de câmera andando com a foto",
                     color = Color(0xFFB8C1C8),
                     fontSize = 15.sp
                 )
 
-                PreviewMovimento(
+                PreviewMovimentoGoPro(
                     bitmap = fotoSelecionada,
-                    movimento = movimento,
+                    modo = modo,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(320.dp)
+                        .height(340.dp)
                 )
 
                 Text(
-                    text = "Movimento selecionado: $movimento",
+                    text = "Modo: $modo",
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold
@@ -128,75 +134,23 @@ fun MoviImovelApp() {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     MovimentoBotao(
-                        texto = "Zoom In",
-                        selecionado = movimento == "Zoom In",
-                        onClick = { movimento = "Zoom In" },
+                        texto = "Caminhada",
+                        selecionado = modo == "Caminhada",
+                        onClick = { modo = "Caminhada" },
                         modifier = Modifier.weight(1f)
                     )
 
                     MovimentoBotao(
-                        texto = "Zoom Out",
-                        selecionado = movimento == "Zoom Out",
-                        onClick = { movimento = "Zoom Out" },
+                        texto = "Entrada",
+                        selecionado = modo == "Entrada",
+                        onClick = { modo = "Entrada" },
                         modifier = Modifier.weight(1f)
                     )
 
                     MovimentoBotao(
-                        texto = "Gimbal",
-                        selecionado = movimento == "Gimbal",
-                        onClick = { movimento = "Gimbal" },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MovimentoBotao(
-                        texto = "← Pan",
-                        selecionado = movimento == "Pan Esquerda",
-                        onClick = { movimento = "Pan Esquerda" },
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    MovimentoBotao(
-                        texto = "Pan →",
-                        selecionado = movimento == "Pan Direita",
-                        onClick = { movimento = "Pan Direita" },
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    MovimentoBotao(
-                        texto = "Diagonal",
-                        selecionado = movimento == "Diagonal",
-                        onClick = { movimento = "Diagonal" },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MovimentoBotao(
-                        texto = "↑ Cima",
-                        selecionado = movimento == "Pan Cima",
-                        onClick = { movimento = "Pan Cima" },
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    MovimentoBotao(
-                        texto = "Baixo ↓",
-                        selecionado = movimento == "Pan Baixo",
-                        onClick = { movimento = "Pan Baixo" },
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    MovimentoBotao(
-                        texto = "Ken Burns",
-                        selecionado = movimento == "Ken Burns",
-                        onClick = { movimento = "Ken Burns" },
+                        texto = "Lateral",
+                        selecionado = modo == "Lateral",
+                        onClick = { modo = "Lateral" },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -209,7 +163,7 @@ fun MoviImovelApp() {
                         .fillMaxWidth()
                         .height(54.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF19A86B)
+                        containerColor = Color(0xFF179A63)
                     ),
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -220,17 +174,18 @@ fun MoviImovelApp() {
                             "Trocar foto do imóvel"
                         },
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
                 }
 
                 Text(
                     text = if (fotoSelecionada == null) {
-                        "Selecione uma foto para testar os movimentos."
+                        "Escolha uma foto para testar a simulação de caminhada."
                     } else {
-                        "A foto permanece preenchendo a área inteira durante todo o movimento."
+                        "O foco agora é o motor de movimento. Ainda não é 3D real, mas já tenta se comportar como câmera em deslocamento."
                     },
-                    color = Color(0xFF9BA7AF),
+                    color = Color(0xFF97A4AC),
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -262,7 +217,7 @@ fun MovimentoBotao(
         Text(
             text = texto,
             color = Color.White,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center
         )
@@ -270,12 +225,12 @@ fun MovimentoBotao(
 }
 
 @Composable
-fun PreviewMovimento(
+fun PreviewMovimentoGoPro(
     bitmap: Bitmap?,
-    movimento: String,
+    modo: String,
     modifier: Modifier = Modifier
 ) {
-    val transition = rememberInfiniteTransition(label = "movimento")
+    val transition = rememberInfiniteTransition(label = "camera_go_pro")
     val density = LocalDensity.current.density
 
     var larguraArea by remember { mutableIntStateOf(1) }
@@ -286,10 +241,10 @@ fun PreviewMovimento(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(
-                durationMillis = 6200,
-                easing = FastOutSlowInEasing
+                durationMillis = 5200,
+                easing = LinearEasing
             ),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Restart
         ),
         label = "progresso"
     )
@@ -297,51 +252,26 @@ fun PreviewMovimento(
     val largura = larguraArea.toFloat()
     val altura = alturaArea.toFloat()
 
-    val escala = when (movimento) {
-        "Zoom In" -> 1.28f + (progresso * 0.20f)
-        "Zoom Out" -> 1.48f - (progresso * 0.20f)
-        "Pan Esquerda" -> 1.34f
-        "Pan Direita" -> 1.34f
-        "Pan Cima" -> 1.34f
-        "Pan Baixo" -> 1.34f
-        "Diagonal" -> 1.38f
-        "Ken Burns" -> 1.35f + (progresso * 0.13f)
-        else -> 1.38f + (progresso * 0.08f)
-    }
+    val anguloBase = progresso * (Math.PI.toFloat() * 2f)
+    val passo = sin(anguloBase * 2f)
+    val corpo = sin(anguloBase)
+    val respiracao = sin(anguloBase * 0.5f)
 
-    val deslocamentoX = when (movimento) {
-        "Pan Esquerda" -> largura * 0.09f - (progresso * largura * 0.18f)
-        "Pan Direita" -> -largura * 0.09f + (progresso * largura * 0.18f)
-        "Diagonal" -> -largura * 0.08f + (progresso * largura * 0.16f)
-        "Ken Burns" -> -largura * 0.06f + (progresso * largura * 0.12f)
-        "Gimbal" -> -largura * 0.035f + (progresso * largura * 0.07f)
-        else -> 0f
-    }
-
-    val deslocamentoY = when (movimento) {
-        "Pan Cima" -> altura * 0.08f - (progresso * altura * 0.16f)
-        "Pan Baixo" -> -altura * 0.08f + (progresso * altura * 0.16f)
-        "Diagonal" -> altura * 0.06f - (progresso * altura * 0.12f)
-        "Ken Burns" -> altura * 0.045f - (progresso * altura * 0.09f)
-        "Gimbal" -> altura * 0.02f - (progresso * altura * 0.04f)
-        else -> 0f
-    }
-
-    val rotacaoY = when (movimento) {
-        "Gimbal" -> -1.4f + (progresso * 2.8f)
-        else -> 0f
-    }
-
-    val rotacaoX = when (movimento) {
-        "Gimbal" -> 0.8f - (progresso * 1.6f)
-        else -> 0f
-    }
+    val parametros = calcularMovimentoGoPro(
+        modo = modo,
+        progresso = progresso,
+        passo = passo,
+        corpo = corpo,
+        respiracao = respiracao,
+        largura = largura,
+        altura = altura
+    )
 
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1A2227)
+            containerColor = Color(0xFF182126)
         )
     ) {
         Box(
@@ -357,19 +287,35 @@ fun PreviewMovimento(
             if (bitmap != null) {
                 Image(
                     bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "Foto do imóvel em movimento",
+                    contentDescription = "Foto do imóvel em simulação de câmera",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            scaleX = escala
-                            scaleY = escala
-                            translationX = deslocamentoX
-                            translationY = deslocamentoY
-                            rotationX = rotacaoX
-                            rotationY = rotacaoY
-                            cameraDistance = 14f * density
+                            scaleX = parametros.scale
+                            scaleY = parametros.scale
+                            translationX = parametros.translationX
+                            translationY = parametros.translationY
+                            rotationZ = parametros.rotationZ
+                            rotationY = parametros.rotationY
+                            rotationX = parametros.rotationX
+                            cameraDistance = 18f * density
                         }
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.16f),
+                                    Color.Transparent,
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.12f)
+                                )
+                            )
+                        )
                 )
             } else {
                 Column(
@@ -381,7 +327,7 @@ fun PreviewMovimento(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "A foto ocupará toda esta área",
+                        text = "A foto vai preencher tudo",
                         color = Color.White,
                         fontSize = 19.sp,
                         fontWeight = FontWeight.Bold,
@@ -389,13 +335,97 @@ fun PreviewMovimento(
                     )
 
                     Text(
-                        text = "Sem laterais, fundos ou molduras aparentes.",
-                        color = Color(0xFFD1D9DE),
+                        text = "Nesta etapa o foco é fazer a imagem se comportar mais como câmera em movimento.",
+                        color = Color(0xFFD3DADF),
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
                     )
                 }
             }
+        }
+    }
+}
+
+private data class CameraMotion(
+    val scale: Float,
+    val translationX: Float,
+    val translationY: Float,
+    val rotationX: Float,
+    val rotationY: Float,
+    val rotationZ: Float
+)
+
+private fun calcularMovimentoGoPro(
+    modo: String,
+    progresso: Float,
+    passo: Float,
+    corpo: Float,
+    respiracao: Float,
+    largura: Float,
+    altura: Float
+): CameraMotion {
+    return when (modo) {
+        "Entrada" -> {
+            val pushIn = 1.34f + (progresso * 0.22f)
+            val swayX = passo * largura * 0.010f
+            val bobY = abs(passo) * altura * 0.014f
+            val driftX = (-largura * 0.020f) + (progresso * largura * 0.040f)
+            val driftY = (altura * 0.010f) - (progresso * altura * 0.030f)
+            val rotZ = passo * 0.55f
+            val rotY = corpo * 1.05f
+            val rotX = (0.25f - abs(passo)) * 0.9f
+
+            CameraMotion(
+                scale = pushIn + abs(passo) * 0.012f,
+                translationX = driftX + swayX,
+                translationY = driftY + bobY,
+                rotationX = rotX,
+                rotationY = rotY,
+                rotationZ = rotZ
+            )
+        }
+
+        "Lateral" -> {
+            val baseScale = 1.46f
+            val lateral = (-largura * 0.11f) + (progresso * largura * 0.22f)
+            val bobY = abs(passo) * altura * 0.010f
+            val microX = passo * largura * 0.008f
+            val rotZ = passo * 0.45f
+            val rotY = -1.2f + (progresso * 2.4f)
+            val rotX = corpo * 0.45f
+
+            CameraMotion(
+                scale = baseScale + abs(corpo) * 0.012f,
+                translationX = lateral + microX,
+                translationY = bobY,
+                rotationX = rotX,
+                rotationY = rotY,
+                rotationZ = rotZ
+            )
+        }
+
+        else -> {
+            val baseScale = 1.40f + (progresso * 0.08f)
+            val advanceX = (-largura * 0.025f) + (progresso * largura * 0.050f)
+            val advanceY = (altura * 0.014f) - (progresso * altura * 0.028f)
+
+            val swayX = passo * largura * 0.014f
+            val bobY = abs(passo) * altura * 0.016f
+            val shoulderY = corpo * altura * 0.004f
+            val breathingZoom = abs(respiracao) * 0.010f
+
+            val rotZ = passo * 0.60f
+            val rotY = corpo * 0.90f
+            val rotX = cos(progresso * Math.PI.toFloat() * 4f) * 0.42f
+
+            CameraMotion(
+                scale = baseScale + breathingZoom,
+                translationX = advanceX + swayX,
+                translationY = advanceY + bobY + shoulderY,
+                rotationX = rotX,
+                rotationY = rotY,
+                rotationZ = rotZ
+            )
         }
     }
 }
