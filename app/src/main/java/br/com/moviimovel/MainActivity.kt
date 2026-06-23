@@ -68,6 +68,7 @@ fun MoviImovelApp() {
     var mapaProfundidade by remember { mutableStateOf<Bitmap?>(null) }
     var mostrandoMapa by remember { mutableStateOf(false) }
     var processando by remember { mutableStateOf(false) }
+
     var mensagem by remember {
         mutableStateOf("Selecione uma foto e gere o mapa 3D.")
     }
@@ -76,10 +77,19 @@ fun MoviImovelApp() {
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            fotoSelecionada = carregarBitmap(context, uri.toString())
-            mapaProfundidade = null
-            mostrandoMapa = false
-            mensagem = "Foto carregada. Agora toque em Gerar mapa 3D."
+            val bitmapCarregado = carregarBitmapSoftware(
+                context = context,
+                uriTexto = uri.toString()
+            )
+
+            if (bitmapCarregado != null) {
+                fotoSelecionada = bitmapCarregado
+                mapaProfundidade = null
+                mostrandoMapa = false
+                mensagem = "Foto carregada. Agora toque em Gerar mapa 3D."
+            } else {
+                mensagem = "Não foi possível carregar essa foto."
+            }
         }
     }
 
@@ -158,13 +168,14 @@ fun MoviImovelApp() {
                                 withContext(Dispatchers.Main) {
                                     mapaProfundidade = resultado
                                     mostrandoMapa = true
-                                    mensagem = "Mapa gerado. Branco tende a indicar áreas mais próximas."
                                     processando = false
+                                    mensagem =
+                                        "Mapa gerado. Branco indica regiões mais próximas; preto indica regiões mais distantes."
                                 }
                             } catch (erro: Exception) {
                                 withContext(Dispatchers.Main) {
-                                    mensagem = "Erro no modelo: ${erro.message}"
                                     processando = false
+                                    mensagem = "Erro no modelo: ${erro.message}"
                                 }
                             }
                         }
@@ -284,7 +295,7 @@ fun PreviewImagem(
     }
 }
 
-private fun carregarBitmap(
+private fun carregarBitmapSoftware(
     context: Context,
     uriTexto: String
 ): Bitmap? {
@@ -292,9 +303,18 @@ private fun carregarBitmap(
         val uri = android.net.Uri.parse(uriTexto)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val source = ImageDecoder.createSource(context.contentResolver, uri)
+            val source = ImageDecoder.createSource(
+                context.contentResolver,
+                uri
+            )
 
             ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                /*
+                 * Impede que o Android carregue a foto como Hardware Bitmap.
+                 * O modelo de profundidade precisa ler os pixels da imagem.
+                 */
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+
                 val larguraOriginal = info.size.width
                 val alturaOriginal = info.size.height
                 val maiorLado = maxOf(larguraOriginal, alturaOriginal)
@@ -311,7 +331,15 @@ private fun carregarBitmap(
             }
         } else {
             @Suppress("DEPRECATION")
-            MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+            val bitmapAntigo = MediaStore.Images.Media.getBitmap(
+                context.contentResolver,
+                uri
+            )
+
+            bitmapAntigo.copy(
+                Bitmap.Config.ARGB_8888,
+                false
+            )
         }
     } catch (_: Exception) {
         null
