@@ -41,14 +41,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -56,7 +51,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -74,8 +68,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MoviImovelApp() {
     val context = LocalContext.current
+
     var fotoSelecionada by remember { mutableStateOf<Bitmap?>(null) }
-    var movimentoAtual by remember { mutableStateOf("Entrada 3D") }
+    var movimentoAtual by remember { mutableStateOf("Entrada Suave") }
 
     val seletorFoto = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -91,7 +86,7 @@ fun MoviImovelApp() {
     MaterialTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = Color(0xFF0F1417)
+            color = Color(0xFF0E1316)
         ) {
             Column(
                 modifier = Modifier
@@ -107,12 +102,12 @@ fun MoviImovelApp() {
                 )
 
                 Text(
-                    text = "Parallax 3D com profundidade e movimentos de entrada",
-                    color = Color(0xFFB9C3C9),
+                    text = "Movimento estabilizado para foto de imóvel",
+                    color = Color(0xFFB6C0C6),
                     fontSize = 15.sp
                 )
 
-                PreviewParallax3D(
+                PreviewMovimentoLimpo(
                     bitmap = fotoSelecionada,
                     movimento = movimentoAtual,
                     modifier = Modifier
@@ -121,37 +116,37 @@ fun MoviImovelApp() {
                 )
 
                 Text(
-                    text = "Movimento atual: $movimentoAtual",
+                    text = "Movimento: $movimentoAtual",
                     color = Color.White,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold
                 )
 
                 MovimentoBotao(
-                    texto = "Entrada 3D",
-                    selecionado = movimentoAtual == "Entrada 3D",
-                    onClick = { movimentoAtual = "Entrada 3D" },
+                    texto = "Entrada Suave",
+                    selecionado = movimentoAtual == "Entrada Suave",
+                    onClick = { movimentoAtual = "Entrada Suave" },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 MovimentoBotao(
-                    texto = "Pan Profundo Esquerda",
-                    selecionado = movimentoAtual == "Pan Profundo Esquerda",
-                    onClick = { movimentoAtual = "Pan Profundo Esquerda" },
+                    texto = "Pan Cinemático Esquerda",
+                    selecionado = movimentoAtual == "Pan Cinemático Esquerda",
+                    onClick = { movimentoAtual = "Pan Cinemático Esquerda" },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 MovimentoBotao(
-                    texto = "Pan Profundo Direita",
-                    selecionado = movimentoAtual == "Pan Profundo Direita",
-                    onClick = { movimentoAtual = "Pan Profundo Direita" },
+                    texto = "Pan Cinemático Direita",
+                    selecionado = movimentoAtual == "Pan Cinemático Direita",
+                    onClick = { movimentoAtual = "Pan Cinemático Direita" },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 MovimentoBotao(
-                    texto = "Diagonal de Entrada",
-                    selecionado = movimentoAtual == "Diagonal de Entrada",
-                    onClick = { movimentoAtual = "Diagonal de Entrada" },
+                    texto = "Diagonal Estabilizada",
+                    selecionado = movimentoAtual == "Diagonal Estabilizada",
+                    onClick = { movimentoAtual = "Diagonal Estabilizada" },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -159,13 +154,6 @@ fun MoviImovelApp() {
                     texto = "Reveal Vertical",
                     selecionado = movimentoAtual == "Reveal Vertical",
                     onClick = { movimentoAtual = "Reveal Vertical" },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                MovimentoBotao(
-                    texto = "Órbita Leve",
-                    selecionado = movimentoAtual == "Órbita Leve",
-                    onClick = { movimentoAtual = "Órbita Leve" },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -187,19 +175,19 @@ fun MoviImovelApp() {
                         } else {
                             "Trocar foto do imóvel"
                         },
+                        color = Color.White,
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
                 Text(
                     text = if (fotoSelecionada == null) {
-                        "Selecione uma foto para testar o novo motor de parallax 3D."
+                        "Selecione uma foto para testar a câmera estabilizada."
                     } else {
-                        "Esta etapa já usa três planos de profundidade com movimentos diferentes."
+                        "Esta versão remove os cortes e distorções. O parallax 3D real entra na próxima etapa com mapa de profundidade."
                     },
-                    color = Color(0xFF97A4AC),
+                    color = Color(0xFF96A2AA),
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -239,12 +227,12 @@ fun MovimentoBotao(
 }
 
 @Composable
-fun PreviewParallax3D(
+fun PreviewMovimentoLimpo(
     bitmap: Bitmap?,
     movimento: String,
     modifier: Modifier = Modifier
 ) {
-    val transition = rememberInfiniteTransition(label = "parallax_3d")
+    val transition = rememberInfiniteTransition(label = "movimento_limpo")
     val density = LocalDensity.current.density
 
     var larguraArea by remember { mutableIntStateOf(1) }
@@ -255,7 +243,7 @@ fun PreviewParallax3D(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(
-                durationMillis = 7000,
+                durationMillis = 6200,
                 easing = FastOutSlowInEasing
             ),
             repeatMode = RepeatMode.Reverse
@@ -266,9 +254,8 @@ fun PreviewParallax3D(
     val progresso = smoothStep(progressoBruto)
     val largura = larguraArea.toFloat()
     val altura = alturaArea.toFloat()
-    val imagem = bitmap?.asImageBitmap()
 
-    val camera = calcularCameraPath(
+    val camera = calcularCameraLimpa(
         movimento = movimento,
         progresso = progresso,
         largura = largura,
@@ -279,7 +266,7 @@ fun PreviewParallax3D(
         modifier = modifier,
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF182126)
+            containerColor = Color.Black
         )
     ) {
         androidx.compose.foundation.layout.Box(
@@ -292,77 +279,23 @@ fun PreviewParallax3D(
                     alturaArea = it.height
                 }
         ) {
-            if (imagem != null) {
-                /*
-                 * CAMADA DE FUNDO
-                 * Move menos, é mais “distante”.
-                 */
-                ParallaxLayer(
-                    image = imagem,
-                    scale = camera.scale + 0.26f,
-                    translationX = camera.translationX * 0.35f,
-                    translationY = camera.translationY * 0.35f,
-                    rotationX = camera.rotationX * 0.18f,
-                    rotationY = camera.rotationY * 0.25f,
-                    rotationZ = camera.rotationZ * 0.10f,
-                    alpha = 0.95f,
-                    blurAmount = 8.dp,
-                    clipTopFraction = 0f,
-                    clipBottomFraction = 1f,
-                    cameraDistance = 18f * density
-                )
-
-                /*
-                 * CAMADA DO MEIO
-                 * Move mais que o fundo.
-                 */
-                ParallaxLayer(
-                    image = imagem,
-                    scale = camera.scale + 0.14f,
-                    translationX = camera.translationX * 0.70f,
-                    translationY = camera.translationY * 0.70f,
-                    rotationX = camera.rotationX * 0.45f,
-                    rotationY = camera.rotationY * 0.55f,
-                    rotationZ = camera.rotationZ * 0.35f,
-                    alpha = 0.48f,
-                    blurAmount = 0.dp,
-                    clipTopFraction = 0.24f,
-                    clipBottomFraction = 0.88f,
-                    cameraDistance = 20f * density
-                )
-
-                /*
-                 * CAMADA FRONTAL
-                 * Move mais e dá a sensação de profundidade.
-                 */
-                ParallaxLayer(
-                    image = imagem,
-                    scale = camera.scale,
-                    translationX = camera.translationX * 1.18f,
-                    translationY = camera.translationY * 1.10f,
-                    rotationX = camera.rotationX,
-                    rotationY = camera.rotationY,
-                    rotationZ = camera.rotationZ,
-                    alpha = 1f,
-                    blurAmount = 0.dp,
-                    clipTopFraction = 0.52f,
-                    clipBottomFraction = 1f,
-                    cameraDistance = 22f * density
-                )
-
-                androidx.compose.foundation.layout.Box(
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "Foto do imóvel em movimento",
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Black.copy(alpha = 0.16f),
-                                    Color.Transparent,
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.14f)
-                                )
-                            )
-                        )
+                        .graphicsLayer {
+                            scaleX = camera.scale
+                            scaleY = camera.scale
+                            translationX = camera.translationX
+                            translationY = camera.translationY
+                            rotationX = camera.rotationX
+                            rotationY = camera.rotationY
+                            rotationZ = camera.rotationZ
+                            cameraDistance = 24f * density
+                        }
                 )
             } else {
                 Column(
@@ -382,8 +315,8 @@ fun PreviewParallax3D(
                     )
 
                     Text(
-                        text = "Agora o app usa três planos para criar parallax 3D.",
-                        color = Color(0xFFD3DADF),
+                        text = "Sem faixas, cópias, blur ou cortes artificiais.",
+                        color = Color(0xFFD4DCE1),
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
                     )
@@ -393,62 +326,7 @@ fun PreviewParallax3D(
     }
 }
 
-@Composable
-fun ParallaxLayer(
-    image: androidx.compose.ui.graphics.ImageBitmap,
-    scale: Float,
-    translationX: Float,
-    translationY: Float,
-    rotationX: Float,
-    rotationY: Float,
-    rotationZ: Float,
-    alpha: Float,
-    blurAmount: Dp,
-    clipTopFraction: Float,
-    clipBottomFraction: Float,
-    cameraDistance: Float
-) {
-    val blurModifier = if (blurAmount > 0.dp) {
-        Modifier.blur(blurAmount)
-    } else {
-        Modifier
-    }
-
-    Image(
-        bitmap = image,
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = Modifier
-            .fillMaxSize()
-            .then(blurModifier)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                this.translationX = translationX
-                this.translationY = translationY
-                this.rotationX = rotationX
-                this.rotationY = rotationY
-                this.rotationZ = rotationZ
-                this.alpha = alpha
-                this.cameraDistance = cameraDistance
-            }
-            .drawWithContent {
-                val top = size.height * clipTopFraction
-                val bottom = size.height * clipBottomFraction
-
-                clipRect(
-                    left = 0f,
-                    top = top,
-                    right = size.width,
-                    bottom = bottom
-                ) {
-                    this@drawWithContent.drawContent()
-                }
-            }
-    )
-}
-
-private data class CameraPath(
+private data class CameraLimpa(
     val scale: Float,
     val translationX: Float,
     val translationY: Float,
@@ -457,80 +335,65 @@ private data class CameraPath(
     val rotationZ: Float
 )
 
-private fun calcularCameraPath(
+private fun calcularCameraLimpa(
     movimento: String,
     progresso: Float,
     largura: Float,
     altura: Float
-): CameraPath {
+): CameraLimpa {
     return when (movimento) {
-        "Pan Profundo Esquerda" -> {
-            CameraPath(
-                scale = 1.34f,
-                translationX = (largura * 0.10f) - (progresso * largura * 0.20f),
-                translationY = (altura * 0.004f) - (progresso * altura * 0.008f),
-                rotationX = 0.10f - (progresso * 0.20f),
-                rotationY = 0.90f - (progresso * 1.80f),
-                rotationZ = 0.06f - (progresso * 0.12f)
-            )
-        }
-
-        "Pan Profundo Direita" -> {
-            CameraPath(
-                scale = 1.34f,
-                translationX = (-largura * 0.10f) + (progresso * largura * 0.20f),
-                translationY = (altura * 0.004f) - (progresso * altura * 0.008f),
-                rotationX = 0.10f - (progresso * 0.20f),
-                rotationY = -0.90f + (progresso * 1.80f),
-                rotationZ = -0.06f + (progresso * 0.12f)
-            )
-        }
-
-        "Diagonal de Entrada" -> {
-            CameraPath(
-                scale = 1.24f + (progresso * 0.14f),
-                translationX = (-largura * 0.05f) + (progresso * largura * 0.10f),
-                translationY = (altura * 0.06f) - (progresso * altura * 0.12f),
-                rotationX = 0.30f - (progresso * 0.60f),
-                rotationY = -0.60f + (progresso * 1.20f),
-                rotationZ = -0.08f + (progresso * 0.16f)
-            )
-        }
-
-        "Reveal Vertical" -> {
-            CameraPath(
-                scale = 1.28f + (progresso * 0.10f),
-                translationX = (-largura * 0.01f) + (progresso * largura * 0.02f),
-                translationY = (altura * 0.08f) - (progresso * altura * 0.16f),
-                rotationX = 0.48f - (progresso * 0.96f),
-                rotationY = -0.20f + (progresso * 0.40f),
+        "Pan Cinemático Esquerda" -> {
+            CameraLimpa(
+                scale = 1.42f,
+                translationX = (largura * 0.08f) - (progresso * largura * 0.16f),
+                translationY = 0f,
+                rotationX = 0f,
+                rotationY = 0.28f - (progresso * 0.56f),
                 rotationZ = 0f
             )
         }
 
-        "Órbita Leve" -> {
-            CameraPath(
-                scale = 1.30f + (progresso * 0.12f),
-                translationX = (-largura * 0.06f) + (progresso * largura * 0.12f),
-                translationY = (altura * 0.01f) - (progresso * altura * 0.02f),
-                rotationX = 0.18f - (progresso * 0.36f),
-                rotationY = -1.10f + (progresso * 2.20f),
-                rotationZ = -0.05f + (progresso * 0.10f)
+        "Pan Cinemático Direita" -> {
+            CameraLimpa(
+                scale = 1.42f,
+                translationX = (-largura * 0.08f) + (progresso * largura * 0.16f),
+                translationY = 0f,
+                rotationX = 0f,
+                rotationY = -0.28f + (progresso * 0.56f),
+                rotationZ = 0f
+            )
+        }
+
+        "Diagonal Estabilizada" -> {
+            CameraLimpa(
+                scale = 1.38f + (progresso * 0.08f),
+                translationX = (-largura * 0.055f) + (progresso * largura * 0.11f),
+                translationY = (altura * 0.045f) - (progresso * altura * 0.09f),
+                rotationX = 0.12f - (progresso * 0.24f),
+                rotationY = -0.18f + (progresso * 0.36f),
+                rotationZ = 0f
+            )
+        }
+
+        "Reveal Vertical" -> {
+            CameraLimpa(
+                scale = 1.40f,
+                translationX = 0f,
+                translationY = (altura * 0.075f) - (progresso * altura * 0.15f),
+                rotationX = 0.30f - (progresso * 0.60f),
+                rotationY = 0f,
+                rotationZ = 0f
             )
         }
 
         else -> {
-            /*
-             * Entrada 3D
-             * Movimento mais importante para “entrar” no ambiente.
-             */
-            CameraPath(
-                scale = 1.22f + (progresso * 0.18f),
-                translationX = (-largura * 0.025f) + (progresso * largura * 0.05f),
-                translationY = (altura * 0.018f) - (progresso * altura * 0.036f),
-                rotationX = 0.22f - (progresso * 0.44f),
-                rotationY = -0.55f + (progresso * 1.10f),
-                rotationZ = -0.03f + (progresso * 0.06f)
+            CameraLimpa(
+                scale = 1.32f + (progresso * 0.16f),
+                translationX = (-largura * 0.018f) + (progresso * largura * 0.036f),
+                translationY = (altura * 0.012f) - (progresso * altura * 0.024f),
+                rotationX = 0.10f - (progresso * 0.20f),
+                rotationY = -0.18f + (progresso * 0.36f),
+                rotationZ = 0f
             )
         }
     }
