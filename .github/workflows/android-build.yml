@@ -25,6 +25,13 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      - name: Baixar modelo de profundidade
+        run: |
+          mkdir -p app/src/main/assets
+          curl -L \
+            "https://huggingface.co/qualcomm/Depth-Anything-V2/resolve/main/Depth-Anything-V2.tflite" \
+            -o app/src/main/assets/depth_anything_v2.tflite
+
       - name: Gerar APK de teste
         run: gradle :app:assembleDebug --stacktrace
 
