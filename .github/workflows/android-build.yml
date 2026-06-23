@@ -6,9 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -35,17 +32,10 @@ jobs:
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk MoviImovel-APK-Teste.apk
 
-      - name: Criar ou atualizar Release de teste
-        uses: softprops/action-gh-release@v2
+      - name: Mostrar APK no Actions
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: teste-atual
-          name: MoviImovel - APK de Teste Atual
-          body: |
-            APK atualizado automaticamente pelo GitHub Actions.
-            Baixe o arquivo MoviImovel-APK-Teste.apk abaixo.
-          prerelease: true
-          make_latest: false
-          files: |
-            MoviImovel-APK-Teste.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: MoviImovel-APK-Teste.apk
+          path: MoviImovel-APK-Teste.apk
+          compression-level: 0
+          if-no-files-found: error
