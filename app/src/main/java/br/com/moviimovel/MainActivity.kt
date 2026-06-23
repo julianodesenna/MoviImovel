@@ -49,7 +49,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -68,16 +68,19 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MoviImovelApp() {
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
-    var movimento by remember { mutableStateOf("Ken Burns") }
+    var movimento by remember { mutableStateOf("Gimbal") }
     var fotoSelecionada by remember { mutableStateOf<Bitmap?>(null) }
 
     val seletorFoto = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            fotoSelecionada = carregarBitmap(context, uri.toString())
+            fotoSelecionada = carregarBitmap(
+                context = context,
+                uriTexto = uri.toString()
+            )
         }
     }
 
@@ -90,7 +93,7 @@ fun MoviImovelApp() {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = "MoviImovel",
@@ -114,7 +117,7 @@ fun MoviImovelApp() {
                 )
 
                 Text(
-                    text = "Movimento: $movimento",
+                    text = "Movimento selecionado: $movimento",
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold
@@ -126,13 +129,22 @@ fun MoviImovelApp() {
                 ) {
                     MovimentoBotao(
                         texto = "Zoom In",
+                        selecionado = movimento == "Zoom In",
                         onClick = { movimento = "Zoom In" },
                         modifier = Modifier.weight(1f)
                     )
 
                     MovimentoBotao(
                         texto = "Zoom Out",
+                        selecionado = movimento == "Zoom Out",
                         onClick = { movimento = "Zoom Out" },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    MovimentoBotao(
+                        texto = "Gimbal",
+                        selecionado = movimento == "Gimbal",
+                        onClick = { movimento = "Gimbal" },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -142,13 +154,48 @@ fun MoviImovelApp() {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     MovimentoBotao(
-                        texto = "Pan",
-                        onClick = { movimento = "Pan" },
+                        texto = "← Pan",
+                        selecionado = movimento == "Pan Esquerda",
+                        onClick = { movimento = "Pan Esquerda" },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    MovimentoBotao(
+                        texto = "Pan →",
+                        selecionado = movimento == "Pan Direita",
+                        onClick = { movimento = "Pan Direita" },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    MovimentoBotao(
+                        texto = "Diagonal",
+                        selecionado = movimento == "Diagonal",
+                        onClick = { movimento = "Diagonal" },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MovimentoBotao(
+                        texto = "↑ Cima",
+                        selecionado = movimento == "Pan Cima",
+                        onClick = { movimento = "Pan Cima" },
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    MovimentoBotao(
+                        texto = "Baixo ↓",
+                        selecionado = movimento == "Pan Baixo",
+                        onClick = { movimento = "Pan Baixo" },
                         modifier = Modifier.weight(1f)
                     )
 
                     MovimentoBotao(
                         texto = "Ken Burns",
+                        selecionado = movimento == "Ken Burns",
                         onClick = { movimento = "Ken Burns" },
                         modifier = Modifier.weight(1f)
                     )
@@ -181,7 +228,7 @@ fun MoviImovelApp() {
                     text = if (fotoSelecionada == null) {
                         "Selecione uma foto para testar os movimentos."
                     } else {
-                        "A foto ocupa toda a prévia, sem fundo ou laterais aparentes."
+                        "A foto permanece preenchendo a área inteira durante todo o movimento."
                     },
                     color = Color(0xFF9BA7AF),
                     fontSize = 13.sp,
@@ -196,22 +243,28 @@ fun MoviImovelApp() {
 @Composable
 fun MovimentoBotao(
     texto: String,
+    selecionado: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
+        modifier = modifier.height(46.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF28343A)
+            containerColor = if (selecionado) {
+                Color(0xFF1C8B5E)
+            } else {
+                Color(0xFF28343A)
+            }
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
         Text(
             text = texto,
             color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
         )
     }
 }
@@ -223,6 +276,7 @@ fun PreviewMovimento(
     modifier: Modifier = Modifier
 ) {
     val transition = rememberInfiniteTransition(label = "movimento")
+    val density = LocalDensity.current.density
 
     var larguraArea by remember { mutableIntStateOf(1) }
     var alturaArea by remember { mutableIntStateOf(1) }
@@ -232,7 +286,7 @@ fun PreviewMovimento(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(
-                durationMillis = 5200,
+                durationMillis = 6200,
                 easing = FastOutSlowInEasing
             ),
             repeatMode = RepeatMode.Reverse
@@ -244,20 +298,42 @@ fun PreviewMovimento(
     val altura = alturaArea.toFloat()
 
     val escala = when (movimento) {
-        "Zoom In" -> 1.35f + (progresso * 0.20f)
-        "Zoom Out" -> 1.55f - (progresso * 0.20f)
-        "Pan" -> 1.52f
-        else -> 1.44f + (progresso * 0.16f)
+        "Zoom In" -> 1.28f + (progresso * 0.20f)
+        "Zoom Out" -> 1.48f - (progresso * 0.20f)
+        "Pan Esquerda" -> 1.34f
+        "Pan Direita" -> 1.34f
+        "Pan Cima" -> 1.34f
+        "Pan Baixo" -> 1.34f
+        "Diagonal" -> 1.38f
+        "Ken Burns" -> 1.35f + (progresso * 0.13f)
+        else -> 1.38f + (progresso * 0.08f)
     }
 
     val deslocamentoX = when (movimento) {
-        "Pan" -> (-largura * 0.11f) + (progresso * largura * 0.22f)
-        "Ken Burns" -> (-largura * 0.07f) + (progresso * largura * 0.14f)
+        "Pan Esquerda" -> largura * 0.09f - (progresso * largura * 0.18f)
+        "Pan Direita" -> -largura * 0.09f + (progresso * largura * 0.18f)
+        "Diagonal" -> -largura * 0.08f + (progresso * largura * 0.16f)
+        "Ken Burns" -> -largura * 0.06f + (progresso * largura * 0.12f)
+        "Gimbal" -> -largura * 0.035f + (progresso * largura * 0.07f)
         else -> 0f
     }
 
     val deslocamentoY = when (movimento) {
-        "Ken Burns" -> (altura * 0.05f) - (progresso * altura * 0.10f)
+        "Pan Cima" -> altura * 0.08f - (progresso * altura * 0.16f)
+        "Pan Baixo" -> -altura * 0.08f + (progresso * altura * 0.16f)
+        "Diagonal" -> altura * 0.06f - (progresso * altura * 0.12f)
+        "Ken Burns" -> altura * 0.045f - (progresso * altura * 0.09f)
+        "Gimbal" -> altura * 0.02f - (progresso * altura * 0.04f)
+        else -> 0f
+    }
+
+    val rotacaoY = when (movimento) {
+        "Gimbal" -> -1.4f + (progresso * 2.8f)
+        else -> 0f
+    }
+
+    val rotacaoX = when (movimento) {
+        "Gimbal" -> 0.8f - (progresso * 1.6f)
         else -> 0f
     }
 
@@ -272,12 +348,11 @@ fun PreviewMovimento(
             modifier = Modifier
                 .fillMaxSize()
                 .clip(RoundedCornerShape(22.dp))
-                .background(Color(0xFF202A30))
+                .background(Color.Black)
                 .onSizeChanged {
                     larguraArea = it.width
                     alturaArea = it.height
-                },
-            contentAlignment = Alignment.Center
+                }
         ) {
             if (bitmap != null) {
                 Image(
@@ -291,42 +366,30 @@ fun PreviewMovimento(
                             scaleY = escala
                             translationX = deslocamentoX
                             translationY = deslocamentoY
+                            rotationX = rotacaoX
+                            rotationY = rotacaoY
+                            cameraDistance = 14f * density
                         }
                 )
-
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(12.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color.Black.copy(alpha = 0.42f))
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        text = movimento,
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
             } else {
                 Column(
                     modifier = Modifier
-                        .widthIn(max = 270.dp)
+                        .align(Alignment.Center)
+                        .widthIn(max = 280.dp)
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Sua foto ocupará toda esta área",
+                        text = "A foto ocupará toda esta área",
                         color = Color.White,
-                        fontSize = 18.sp,
+                        fontSize = 19.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
 
                     Text(
-                        text = "Sem bordas, sem fundo e com movimento protegido para não denunciar que é foto.",
+                        text = "Sem laterais, fundos ou molduras aparentes.",
                         color = Color(0xFFD1D9DE),
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
@@ -350,7 +413,6 @@ private fun carregarBitmap(
             ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
                 val larguraOriginal = info.size.width
                 val alturaOriginal = info.size.height
-
                 val maiorLado = maxOf(larguraOriginal, alturaOriginal)
                 val limite = 2400
 
