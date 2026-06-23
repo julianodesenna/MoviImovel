@@ -25,12 +25,40 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Baixar modelo de profundidade
+      - name: Instalar cliente Hugging Face
         run: |
+          python -m pip install --upgrade pip
+          pip install "huggingface_hub[hf_xet]"
+
+      - name: Baixar modelo real de profundidade
+        run: |
+          rm -rf app/src/main/assets
           mkdir -p app/src/main/assets
-          curl -L \
-            "https://huggingface.co/qualcomm/Depth-Anything-V2/resolve/main/Depth-Anything-V2.tflite" \
-            -o app/src/main/assets/depth_anything_v2.tflite
+
+          hf download \
+            qualcomm/Depth-Anything-V2 \
+            Depth-Anything-V2.tflite \
+            --local-dir app/src/main/assets
+
+          mv \
+            app/src/main/assets/Depth-Anything-V2.tflite \
+            app/src/main/assets/depth_anything_v2.tflite
+
+          echo "=== MODELO BAIXADO ==="
+          ls -lh app/src/main/assets/depth_anything_v2.tflite
+
+      - name: Confirmar tamanho do modelo
+        run: |
+          TAMANHO=$(stat -c%s app/src/main/assets/depth_anything_v2.tflite)
+
+          echo "Tamanho do modelo em bytes: $TAMANHO"
+
+          if [ "$TAMANHO" -lt 80000000 ]; then
+            echo "ERRO: o modelo baixado ficou pequeno demais e não é o arquivo real."
+            exit 1
+          fi
+
+          echo "MODELO REAL CONFIRMADO."
 
       - name: Gerar APK de teste
         run: gradle :app:assembleDebug --stacktrace
@@ -38,6 +66,7 @@ jobs:
       - name: Renomear APK
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk MoviImovel-APK-Teste.apk
+          ls -lh MoviImovel-APK-Teste.apk
 
       - name: Mostrar APK direto no Actions
         uses: actions/upload-artifact@v7
