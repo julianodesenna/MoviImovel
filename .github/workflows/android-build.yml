@@ -36,12 +36,12 @@ jobs:
           mkdir -p app/src/main/assets
 
           hf download \
-            qualcomm/Depth-Anything-V2 \
-            Depth-Anything-V2.tflite \
+            qualcomm/Depth-Anything \
+            Depth-Anything_float.tflite \
             --local-dir app/src/main/assets
 
           mv \
-            app/src/main/assets/Depth-Anything-V2.tflite \
+            app/src/main/assets/Depth-Anything_float.tflite \
             app/src/main/assets/depth_anything_v2.tflite
 
           echo "=== MODELO BAIXADO ==="
@@ -54,7 +54,7 @@ jobs:
           echo "Tamanho do modelo em bytes: $TAMANHO"
 
           if [ "$TAMANHO" -lt 80000000 ]; then
-            echo "ERRO: o modelo baixado ficou pequeno demais e não é o arquivo real."
+            echo "ERRO: modelo pequeno demais. Download inválido."
             exit 1
           fi
 
