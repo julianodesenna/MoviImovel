@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.AssetFileDescriptor
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.Matrix
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
@@ -31,7 +30,7 @@ class DepthEstimator(
 
             if (inputTensor.dataType() != DataType.FLOAT32) {
                 throw IllegalStateException(
-                    "O modelo usa entrada ${inputTensor.dataType()}, mas este teste foi preparado para FLOAT32."
+                    "Entrada do modelo incompatível: ${inputTensor.dataType()}"
                 )
             }
 
@@ -54,10 +53,13 @@ class DepthEstimator(
                 inputWidth = inputShape[2]
             }
 
-            val bitmapRedimensionado = redimensionar(
-                bitmap = bitmapOriginal,
-                largura = inputWidth,
-                altura = inputHeight
+            val bitmapSoftware = converterParaBitmapSoftware(bitmapOriginal)
+
+            val bitmapRedimensionado = Bitmap.createScaledBitmap(
+                bitmapSoftware,
+                inputWidth,
+                inputHeight,
+                true
             )
 
             val inputBuffer = criarInputBuffer(
@@ -72,7 +74,7 @@ class DepthEstimator(
 
             if (outputTensor.dataType() != DataType.FLOAT32) {
                 throw IllegalStateException(
-                    "O modelo usa saída ${outputTensor.dataType()}, mas este teste foi preparado para FLOAT32."
+                    "Saída do modelo incompatível: ${outputTensor.dataType()}"
                 )
             }
 
@@ -94,12 +96,12 @@ class DepthEstimator(
                 valores[i] = outputBuffer.float
             }
 
-            val outputSize = descobrirTamanhoSaida(outputShape)
+            val tamanhoSaida = descobrirTamanhoSaida(outputShape)
 
-            return converterParaBitmap(
+            return converterSaidaParaBitmap(
                 valores = valores,
-                largura = outputSize.first,
-                altura = outputSize.second
+                largura = tamanhoSaida.first,
+                altura = tamanhoSaida.second
             )
         } finally {
             interpreter.close()
@@ -119,17 +121,23 @@ class DepthEstimator(
         }
     }
 
-    private fun redimensionar(
-        bitmap: Bitmap,
-        largura: Int,
-        altura: Int
-    ): Bitmap {
-        return Bitmap.createScaledBitmap(
-            bitmap,
-            largura,
-            altura,
-            true
+    private fun converterParaBitmapSoftware(bitmapOriginal: Bitmap): Bitmap {
+        val bitmapSoftware = Bitmap.createBitmap(
+            bitmapOriginal.width,
+            bitmapOriginal.height,
+            Bitmap.Config.ARGB_8888
         )
+
+        val canvas = android.graphics.Canvas(bitmapSoftware)
+
+        canvas.drawBitmap(
+            bitmapOriginal,
+            0f,
+            0f,
+            null
+        )
+
+        return bitmapSoftware
     }
 
     private fun criarInputBuffer(
@@ -143,6 +151,7 @@ class DepthEstimator(
             .order(ByteOrder.nativeOrder())
 
         val pixels = IntArray(largura * altura)
+
         bitmap.getPixels(
             pixels,
             0,
@@ -161,7 +170,11 @@ class DepthEstimator(
         val desvioG = 0.224f
         val desvioB = 0.225f
 
-        fun normalizar(valor: Int, media: Float, desvio: Float): Float {
+        fun normalizar(
+            valor: Int,
+            media: Float,
+            desvio: Float
+        ): Float {
             val zeroUm = valor / 255f
             return (zeroUm - media) / desvio
         }
@@ -186,23 +199,44 @@ class DepthEstimator(
             }
         } else {
             for (pixel in pixels) {
-                buffer.putFloat(normalizar(Color.red(pixel), mediaR, desvioR))
-                buffer.putFloat(normalizar(Color.green(pixel), mediaG, desvioG))
-                buffer.putFloat(normalizar(Color.blue(pixel), mediaB, desvioB))
+                buffer.putFloat(
+                    normalizar(
+                        Color.red(pixel),
+                        mediaR,
+                        desvioR
+                    )
+                )
+
+                buffer.putFloat(
+                    normalizar(
+                        Color.green(pixel),
+                        mediaG,
+                        desvioG
+                    )
+                )
+
+                buffer.putFloat(
+                    normalizar(
+                        Color.blue(pixel),
+                        mediaB,
+                        desvioB
+                    )
+                )
             }
         }
 
         buffer.rewind()
+
         return buffer
     }
 
     private fun descobrirTamanhoSaida(shape: IntArray): Pair<Int, Int> {
         return when (shape.size) {
             4 -> {
-                if (shape[3] == 1) {
-                    Pair(shape[2], shape[1])
-                } else {
-                    Pair(shape[3], shape[2])
+                when {
+                    shape[1] == 1 -> Pair(shape[3], shape[2])
+                    shape[3] == 1 -> Pair(shape[2], shape[1])
+                    else -> Pair(shape[3], shape[2])
                 }
             }
 
@@ -216,7 +250,7 @@ class DepthEstimator(
         }
     }
 
-    private fun converterParaBitmap(
+    private fun converterSaidaParaBitmap(
         valores: FloatArray,
         largura: Int,
         altura: Int
@@ -225,7 +259,7 @@ class DepthEstimator(
 
         if (valores.size < totalPixels) {
             throw IllegalStateException(
-                "A saída possui menos valores do que pixels esperados."
+                "Saída inválida: menos valores que pixels."
             )
         }
 
@@ -244,10 +278,25 @@ class DepthEstimator(
 
         for (i in 0 until totalPixels) {
             val normalizado = (valores[i] - minimo) / intervalo
-            val invertido = 1f - normalizado
-            val cinza = min(255, max(0, (invertido * 255f).toInt()))
 
-            pixels[i] = Color.rgb(cinza, cinza, cinza)
+            /*
+             * Branco = mais perto.
+             * Preto = mais longe.
+             */
+            val invertido = 1f - normalizado
+            val cinza = min(
+                255,
+                max(
+                    0,
+                    (invertido * 255f).toInt()
+                )
+            )
+
+            pixels[i] = Color.rgb(
+                cinza,
+                cinza,
+                cinza
+            )
         }
 
         return Bitmap.createBitmap(
