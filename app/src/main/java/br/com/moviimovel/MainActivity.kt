@@ -1,30 +1,20 @@
 package br.com.moviimovel
 
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
-import org.json.JSONObject
-import java.net.URL
-import java.net.HttpURLConnection
-import java.io.ByteArrayOutputStream
-import android.util.Base64
-import android.net.Uri
-import android.content.Intent
+import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.MediaStore
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -34,14 +24,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,9 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +58,21 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private const val MOVIIMOVEL_VIDEO_WORKER =
+    "https://moviimovel-grok-worker.julianoocorretor.workers.dev"
+
+data class MovimentoVideo(
+    val nome: String,
+    val prompt: String
+)
 
 class MainActivity : ComponentActivity() {
 
@@ -76,49 +85,26 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private data class MovimentoCamera(
-    val escala: Float,
-    val deslocamentoX: Float,
-    val deslocamentoY: Float,
-    val origemX: Float,
-    val origemY: Float
-)
-
 @Composable
 fun MoviImovelApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val movimentos = remember {
+        listaMovimentosVideo()
+    }
+
     var fotoSelecionada by remember {
         mutableStateOf<Bitmap?>(null)
     }
 
-    var depthResult by remember {
-        mutableStateOf<DepthResult?>(null)
+    var movimentoSelecionado by remember {
+        mutableStateOf(movimentos.first())
     }
 
-    var mostrandoMapa by remember {
-        mutableStateOf(false)
+    var promptVideo by remember {
+        mutableStateOf(movimentos.first().prompt)
     }
-
-    var movimentoAtivo by remember {
-        mutableStateOf(false)
-    }
-
-    var processandoMapa by remember {
-        mutableStateOf(false)
-    }
-
-    var modoAtual by remember {
-        mutableStateOf("Entrada frontal")
-    }
-
-    var mensagem by remember {
-        mutableStateOf(
-            "Selecione uma foto. Os movimentos usam a imagem original."
-        )
-    }
-
 
     var duracaoVideo by remember {
         mutableStateOf(3)
@@ -132,6 +118,16 @@ fun MoviImovelApp() {
         mutableStateOf<String?>(null)
     }
 
+    var mensagem by remember {
+        mutableStateOf(
+            "Selecione uma foto, escolha o movimento e revise o prompt antes de gerar."
+        )
+    }
+
+    var mostrandoListaMovimentos by remember {
+        mutableStateOf(false)
+    }
+
     val seletorFoto = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -143,34 +139,72 @@ fun MoviImovelApp() {
 
             if (bitmapCarregado != null) {
                 fotoSelecionada = bitmapCarregado
-                depthResult = null
-                mostrandoMapa = false
-                movimentoAtivo = false
-
+                ultimoVideoUrl = null
                 mensagem =
-                    "Foto carregada em alta qualidade. Escolha um movimento."
+                    "Foto carregada. Escolha o movimento e revise o prompt."
             } else {
                 mensagem = "Não foi possível carregar essa foto."
             }
         }
     }
 
-    val transition = rememberInfiniteTransition(
-        label = "movimento_camera_local"
-    )
-
-    val progressoMovimento by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = 8500,
-                easing = FastOutSlowInEasing
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "camera_lenta"
-    )
+    if (mostrandoListaMovimentos) {
+        AlertDialog(
+            onDismissRequest = {
+                mostrandoListaMovimentos = false
+            },
+            title = {
+                Text(
+                    text = "Escolha o movimento",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(430.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    movimentos.forEach { movimento ->
+                        TextButton(
+                            onClick = {
+                                movimentoSelecionado = movimento
+                                promptVideo = movimento.prompt
+                                mostrandoListaMovimentos = false
+                                mensagem =
+                                    "Prompt atualizado para: ${movimento.nome}"
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = movimento.nome,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Start,
+                                fontWeight = if (
+                                    movimento.nome == movimentoSelecionado.nome
+                                ) {
+                                    FontWeight.Bold
+                                } else {
+                                    FontWeight.Normal
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mostrandoListaMovimentos = false
+                    }
+                ) {
+                    Text("Fechar")
+                }
+            }
+        )
+    }
 
     MaterialTheme {
         Surface(
@@ -182,37 +216,19 @@ fun MoviImovelApp() {
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(11.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
-                    text = "MoviImovel",
+                    text = "MoviImovel Vídeo IA",
                     color = Color.White,
-                    fontSize = 30.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
-                    text = "Movimentos de câmera com foto original nítida",
-                    color = Color(0xFFB8C2C8),
-                    fontSize = 15.sp
-                )
-
-                PreviewImagemAltaQualidade(
-                    bitmap = when {
-                        mostrandoMapa -> depthResult?.visualMap
-                        else -> fotoSelecionada
-                    },
-                    titulo = when {
-                        mostrandoMapa -> "Mapa de profundidade"
-                        movimentoAtivo -> modoAtual
-                        else -> "Foto original"
-                    },
-                    movimentoAtivo = movimentoAtivo && !mostrandoMapa,
-                    modoAtual = modoAtual,
-                    progresso = progressoMovimento,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(360.dp)
+                    text = "Gere vídeos curtos de imóveis com prompt visível e editável.",
+                    color = Color(0xFFC6D0D6),
+                    fontSize = 14.sp
                 )
 
                 Button(
@@ -221,9 +237,9 @@ fun MoviImovelApp() {
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp),
+                        .height(52.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF179A63)
+                        containerColor = Color(0xFF284B63)
                     ),
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -234,214 +250,189 @@ fun MoviImovelApp() {
                             "Trocar foto do imóvel"
                         },
                         color = Color.White,
-                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                Button(
-                    onClick = {
-                        val foto = fotoSelecionada ?: return@Button
+                if (fotoSelecionada != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF182126)
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(230.dp)
+                                .padding(10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                bitmap = fotoSelecionada!!.asImageBitmap(),
+                                contentDescription = "Foto selecionada",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+                }
 
-                        processandoMapa = true
-                        movimentoAtivo = false
-                        mensagem = "Criando mapa de profundidade real..."
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF182126)
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "Movimento escolhido",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
 
-                        scope.launch(Dispatchers.Default) {
-                            try {
-                                val resultado = DepthEstimator(context)
-                                    .gerarProfundidade(foto)
+                        Text(
+                            text = movimentoSelecionado.nome,
+                            color = Color(0xFFFFC58B),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
 
-                                withContext(Dispatchers.Main) {
-                                    depthResult = resultado
-                                    mostrandoMapa = true
-                                    processandoMapa = false
-                                    mensagem = "Mapa pronto. A foto original continua preservada."
-                                }
-                            } catch (erro: Exception) {
-                                withContext(Dispatchers.Main) {
-                                    processandoMapa = false
-                                    mensagem = "Erro no modelo: ${erro.message}"
+                        Button(
+                            onClick = {
+                                mostrandoListaMovimentos = true
+                            },
+                            enabled = !gerandoVideo,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF304D5B)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = "Escolher outro movimento",
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Prompt que será enviado",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = promptVideo,
+                    onValueChange = {
+                        promptVideo = it
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(245.dp),
+                    enabled = !gerandoVideo,
+                    label = {
+                        Text("Você pode editar este texto")
+                    },
+                    minLines = 8
+                )
+
+                Text(
+                    text = "Duração",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(2, 3, 5, 10, 15, 20).chunked(3).forEach { linha ->
+                        androidx.compose.foundation.layout.Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            linha.forEach { segundos ->
+                                Button(
+                                    onClick = {
+                                        duracaoVideo = segundos
+                                        mensagem =
+                                            "Duração escolhida: $segundos segundos."
+                                    },
+                                    enabled = !gerandoVideo,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (
+                                            duracaoVideo == segundos
+                                        ) {
+                                            Color(0xFFD46A27)
+                                        } else {
+                                            Color(0xFF304D5B)
+                                        }
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        text = "${segundos}s",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }
-                    },
-                    enabled = fotoSelecionada != null && !processandoMapa,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF315D89),
-                        disabledContainerColor = Color(0xFF2A363F)
-                    ),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text(
-                        text = if (processandoMapa) {
-                            "Gerando mapa 3D..."
-                        } else {
-                            "Gerar mapa de profundidade"
-                        },
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    }
                 }
 
                 Button(
                     onClick = {
-                        mostrandoMapa = false
-                        movimentoAtivo = !movimentoAtivo
+                        val foto = fotoSelecionada
 
-                        mensagem = if (movimentoAtivo) {
-                            "Movimento ativo: $modoAtual."
-                        } else {
-                            "Movimento pausado."
-                        }
-                    },
-                    enabled = fotoSelecionada != null && !processandoMapa,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (movimentoAtivo) {
-                            Color(0xFF7C3030)
-                        } else {
-                            Color(0xFF6B3D9A)
-                        },
-                        disabledContainerColor = Color(0xFF30253B)
-                    ),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text(
-                        text = if (movimentoAtivo) {
-                            "Parar movimento: $modoAtual"
-                        } else {
-                            "Testar movimento: $modoAtual"
-                        },
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        modoAtual = proximoModo(modoAtual)
-                        mostrandoMapa = false
-                        movimentoAtivo = true
-                        mensagem = "Modo selecionado: $modoAtual."
-                    },
-                    enabled = fotoSelecionada != null && !processandoMapa,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF28343A),
-                        disabledContainerColor = Color(0xFF20282E)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = "Trocar movimento: $modoAtual",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        movimentoAtivo = false
-                        mostrandoMapa = !mostrandoMapa
-
-                        mensagem = if (mostrandoMapa) {
-                            "Mapa de profundidade exibido."
-                        } else {
-                            "Foto original exibida."
-                        }
-                    },
-                    enabled = depthResult != null && !processandoMapa,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF222C32),
-                        disabledContainerColor = Color(0xFF20282E)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = if (mostrandoMapa) {
-                            "Ver foto original"
-                        } else {
-                            "Ver mapa de profundidade"
-                        },
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-
-                Button(
-                    onClick = {
-                        duracaoVideo = when (duracaoVideo) {
-                            2 -> 3
-                            3 -> 5
-                            5 -> 10
-                            10 -> 15
-                            15 -> 20
-                            else -> 2
+                        if (foto == null) {
+                            mensagem = "Selecione uma foto antes de gerar."
+                            return@Button
                         }
 
-                        mensagem = "Duração escolhida: ${duracaoVideo} segundos."
-                    },
-                    enabled = fotoSelecionada != null && !gerandoVideo,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF284B63),
-                        disabledContainerColor = Color(0xFF20282E)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = "Duração do vídeo: ${duracaoVideo} segundos",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        val foto = fotoSelecionada ?: return@Button
+                        if (promptVideo.isBlank()) {
+                            mensagem = "O prompt não pode ficar vazio."
+                            return@Button
+                        }
 
                         gerandoVideo = true
-                        movimentoAtivo = false
-                        mostrandoMapa = false
-                        mensagem = "Enviando foto e gerando vídeo em ${duracaoVideo} segundos..."
+                        mensagem =
+                            "Enviando foto e gerando vídeo de $duracaoVideo segundos..."
 
                         scope.launch(Dispatchers.IO) {
                             try {
                                 val videoUrl = gerarVideoPVideo(
                                     bitmap = foto,
                                     duracao = duracaoVideo,
-                                    modoMovimento = modoAtual
+                                    prompt = promptVideo
                                 )
 
                                 withContext(Dispatchers.Main) {
                                     ultimoVideoUrl = videoUrl
                                     gerandoVideo = false
-                                    mensagem = "Vídeo pronto e salvo permanentemente."
+                                    mensagem =
+                                        "Vídeo pronto e salvo permanentemente no R2."
                                     abrirVideo(context, videoUrl)
                                 }
                             } catch (erro: Exception) {
                                 withContext(Dispatchers.Main) {
                                     gerandoVideo = false
-                                    mensagem = "Erro ao gerar vídeo: ${erro.message}"
+                                    mensagem =
+                                        "Erro ao gerar vídeo: ${erro.message}"
                                 }
                             }
                         }
@@ -449,21 +440,21 @@ fun MoviImovelApp() {
                     enabled = fotoSelecionada != null && !gerandoVideo,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp),
+                        .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFFD46A27),
-                        disabledContainerColor = Color(0xFF40312A)
+                        disabledContainerColor = Color(0xFF42342C)
                     ),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Text(
                         text = if (gerandoVideo) {
-                            "Gerando vídeo IA..."
+                            "Gerando vídeo..."
                         } else {
-                            "Gerar vídeo IA: ${duracaoVideo} s"
+                            "Gerar vídeo IA • ${duracaoVideo}s"
                         },
                         color = Color.White,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -485,345 +476,207 @@ fun MoviImovelApp() {
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = "Abrir último vídeo salvo",
+                        text = "Abrir último vídeo",
                         color = Color.White,
-                        fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
 
-                Text(
-                    text = mensagem,
-                    color = Color(0xFF9EABB3),
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-    }
-}
-
-private fun proximoModo(
-    modoAtual: String
-): String {
-    return when (modoAtual) {
-        "Entrada frontal" -> "Entrada pela direita"
-        "Entrada pela direita" -> "Entrada pela esquerda"
-        "Entrada pela esquerda" -> "Aproximação no centro"
-        "Aproximação no centro" -> "Saída cinematográfica"
-        "Saída cinematográfica" -> "Pan entrando à direita"
-        "Pan entrando à direita" -> "Pan entrando à esquerda"
-        "Pan entrando à esquerda" -> "Diagonal entrando"
-        "Diagonal entrando" -> "Subida entrando"
-        "Subida entrando" -> "Descida entrando"
-        "Descida entrando" -> "Foco no canto superior"
-        "Foco no canto superior" -> "Foco no canto inferior"
-        "Foco no canto inferior" -> "Zoom lento profundo"
-        "Zoom lento profundo" -> "Passeio amplo"
-        else -> "Entrada frontal"
-    }
-}
-
-@Composable
-fun PreviewImagemAltaQualidade(
-    bitmap: Bitmap?,
-    titulo: String,
-    movimentoAtivo: Boolean,
-    modoAtual: String,
-    progresso: Float,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black
-        )
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(22.dp))
-                .background(Color.Black),
-            contentAlignment = Alignment.Center
-        ) {
-            if (bitmap != null) {
-                val movimento = calcularMovimentoLocal(
-                    modoAtual = modoAtual,
-                    progresso = progresso,
-                    ativo = movimentoAtivo
-                )
-
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = titulo,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            transformOrigin = TransformOrigin(
-                                pivotFractionX = movimento.origemX,
-                                pivotFractionY = movimento.origemY
-                            )
-
-                            scaleX = movimento.escala
-                            scaleY = movimento.escala
-                            translationX = movimento.deslocamentoX
-                            translationY = movimento.deslocamentoY
+                Button(
+                    onClick = {
+                        ultimoVideoUrl?.let {
+                            salvarVideoNoCelular(context, it)
+                            mensagem =
+                                "Download iniciado. Procure o MP4 na pasta Download."
                         }
-                )
-            } else {
-                Text(
-                    text = "Selecione uma foto do imóvel",
-                    color = Color(0xFFD4DDE2),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(12.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.Black.copy(alpha = 0.48f))
-                    .padding(
-                        horizontal = 12.dp,
-                        vertical = 7.dp
+                    },
+                    enabled = ultimoVideoUrl != null && !gerandoVideo,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF5A3F8C),
+                        disabledContainerColor = Color(0xFF20282E)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "Salvar vídeo no celular",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold
                     )
-            ) {
-                Text(
-                    text = titulo,
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-    }
-}
+                }
 
-private fun calcularMovimentoLocal(
-    modoAtual: String,
-    progresso: Float,
-    ativo: Boolean
-): MovimentoCamera {
-    if (!ativo) {
-        return MovimentoCamera(
-            escala = 1f,
-            deslocamentoX = 0f,
-            deslocamentoY = 0f,
-            origemX = 0.5f,
-            origemY = 0.5f
-        )
-    }
-
-    val centro = progresso - 0.5f
-
-    return when (modoAtual) {
-        "Entrada pela direita" -> {
-            MovimentoCamera(
-                escala = 1.10f + (progresso * 0.22f),
-                deslocamentoX = centro * 92f,
-                deslocamentoY = centro * -10f,
-                origemX = 0.72f,
-                origemY = 0.52f
-            )
-        }
-
-        "Entrada pela esquerda" -> {
-            MovimentoCamera(
-                escala = 1.10f + (progresso * 0.22f),
-                deslocamentoX = centro * -92f,
-                deslocamentoY = centro * -10f,
-                origemX = 0.28f,
-                origemY = 0.52f
-            )
-        }
-
-        "Aproximação no centro" -> {
-            MovimentoCamera(
-                escala = 1.04f + (progresso * 0.33f),
-                deslocamentoX = centro * 16f,
-                deslocamentoY = centro * -14f,
-                origemX = 0.5f,
-                origemY = 0.5f
-            )
-        }
-
-        "Saída cinematográfica" -> {
-            MovimentoCamera(
-                escala = 1.38f - (progresso * 0.30f),
-                deslocamentoX = centro * -22f,
-                deslocamentoY = centro * 16f,
-                origemX = 0.5f,
-                origemY = 0.5f
-            )
-        }
-
-        "Pan entrando à direita" -> {
-            MovimentoCamera(
-                escala = 1.12f + (progresso * 0.20f),
-                deslocamentoX = centro * 118f,
-                deslocamentoY = centro * -26f,
-                origemX = 0.68f,
-                origemY = 0.48f
-            )
-        }
-
-        "Pan entrando à esquerda" -> {
-            MovimentoCamera(
-                escala = 1.12f + (progresso * 0.20f),
-                deslocamentoX = centro * -118f,
-                deslocamentoY = centro * -26f,
-                origemX = 0.32f,
-                origemY = 0.48f
-            )
-        }
-
-        "Diagonal entrando" -> {
-            MovimentoCamera(
-                escala = 1.10f + (progresso * 0.24f),
-                deslocamentoX = centro * 92f,
-                deslocamentoY = centro * -72f,
-                origemX = 0.65f,
-                origemY = 0.35f
-            )
-        }
-
-        "Subida entrando" -> {
-            MovimentoCamera(
-                escala = 1.09f + (progresso * 0.23f),
-                deslocamentoX = centro * 12f,
-                deslocamentoY = centro * -118f,
-                origemX = 0.5f,
-                origemY = 0.28f
-            )
-        }
-
-        "Descida entrando" -> {
-            MovimentoCamera(
-                escala = 1.09f + (progresso * 0.23f),
-                deslocamentoX = centro * -12f,
-                deslocamentoY = centro * 118f,
-                origemX = 0.5f,
-                origemY = 0.72f
-            )
-        }
-
-        "Foco no canto superior" -> {
-            MovimentoCamera(
-                escala = 1.15f + (progresso * 0.22f),
-                deslocamentoX = centro * 48f,
-                deslocamentoY = centro * -86f,
-                origemX = 0.72f,
-                origemY = 0.22f
-            )
-        }
-
-        "Foco no canto inferior" -> {
-            MovimentoCamera(
-                escala = 1.15f + (progresso * 0.22f),
-                deslocamentoX = centro * -48f,
-                deslocamentoY = centro * 86f,
-                origemX = 0.28f,
-                origemY = 0.78f
-            )
-        }
-
-        "Zoom lento profundo" -> {
-            MovimentoCamera(
-                escala = 1.02f + (progresso * 0.40f),
-                deslocamentoX = centro * 18f,
-                deslocamentoY = centro * -18f,
-                origemX = 0.5f,
-                origemY = 0.48f
-            )
-        }
-
-        "Passeio amplo" -> {
-            MovimentoCamera(
-                escala = 1.18f + (progresso * 0.16f),
-                deslocamentoX = centro * 128f,
-                deslocamentoY = centro * -42f,
-                origemX = 0.62f,
-                origemY = 0.46f
-            )
-        }
-
-        else -> {
-            MovimentoCamera(
-                escala = 1.05f + (progresso * 0.30f),
-                deslocamentoX = centro * 24f,
-                deslocamentoY = centro * -18f,
-                origemX = 0.5f,
-                origemY = 0.5f
-            )
-        }
-    }
-}
-
-private fun carregarBitmapAltaQualidade(
-    context: Context,
-    uriTexto: String
-): Bitmap? {
-    return try {
-        val uri = android.net.Uri.parse(uriTexto)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val source = ImageDecoder.createSource(
-                context.contentResolver,
-                uri
-            )
-
-            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-
-                val maiorLado = maxOf(
-                    info.size.width,
-                    info.size.height
-                )
-
-                val limite = 4096
-
-                if (maiorLado > limite) {
-                    val proporcao = limite.toFloat() / maiorLado.toFloat()
-
-                    decoder.setTargetSize(
-                        (info.size.width * proporcao).toInt(),
-                        (info.size.height * proporcao).toInt()
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF172228)
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        text = mensagem,
+                        color = Color(0xFFF2D8AF),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
                     )
                 }
             }
-        } else {
-            @Suppress("DEPRECATION")
-            MediaStore.Images.Media.getBitmap(
-                context.contentResolver,
-                uri
-            ).copy(
-                Bitmap.Config.ARGB_8888,
-                false
-            )
         }
-    } catch (_: Exception) {
-        null
     }
 }
 
+private fun listaMovimentosVideo(): List<MovimentoVideo> {
+    fun prompt(movimento: String): String {
+        return """
+$movimento
 
-private const val MOVIIMOVEL_VIDEO_WORKER =
-    "https://moviimovel-grok-worker.julianoocorretor.workers.dev"
+Crie um vídeo curto e realista para apresentação imobiliária.
+Preserve rigorosamente paredes, piso, teto, portas, janelas, cortinas,
+móveis, iluminação, arquitetura, materiais e proporções originais.
+
+Não adicionar pessoas, animais, objetos, reformas, mudanças estruturais,
+deformações, duplicações, textos ou qualquer elemento inexistente na foto.
+A câmera deve se mover de forma lenta, suave, profissional e estável.
+        """.trimIndent()
+    }
+
+    return listOf(
+        MovimentoVideo(
+            "Aproximação frontal suave",
+            prompt(
+                "A câmera faz uma aproximação frontal muito leve e centralizada."
+            )
+        ),
+        MovimentoVideo(
+            "Afastamento suave",
+            prompt(
+                "A câmera se afasta lentamente do ambiente, ampliando a visão."
+            )
+        ),
+        MovimentoVideo(
+            "Pan da esquerda para a direita",
+            prompt(
+                "A câmera desliza lateralmente da esquerda para a direita."
+            )
+        ),
+        MovimentoVideo(
+            "Pan da direita para a esquerda",
+            prompt(
+                "A câmera desliza lateralmente da direita para a esquerda."
+            )
+        ),
+        MovimentoVideo(
+            "Zoom leve para dentro",
+            prompt(
+                "A câmera faz um zoom muito leve para dentro, sem deformar o ambiente."
+            )
+        ),
+        MovimentoVideo(
+            "Zoom leve para fora",
+            prompt(
+                "A câmera faz um zoom muito leve para fora, revelando mais do ambiente."
+            )
+        ),
+        MovimentoVideo(
+            "Subida suave",
+            prompt(
+                "A câmera sobe lentamente, mantendo o ambiente estável."
+            )
+        ),
+        MovimentoVideo(
+            "Descida suave",
+            prompt(
+                "A câmera desce lentamente, mantendo o ambiente estável."
+            )
+        ),
+        MovimentoVideo(
+            "Diagonal para cima à direita",
+            prompt(
+                "A câmera faz um deslocamento diagonal suave para cima e para a direita."
+            )
+        ),
+        MovimentoVideo(
+            "Diagonal para cima à esquerda",
+            prompt(
+                "A câmera faz um deslocamento diagonal suave para cima e para a esquerda."
+            )
+        ),
+        MovimentoVideo(
+            "Diagonal para baixo à direita",
+            prompt(
+                "A câmera faz um deslocamento diagonal suave para baixo e para a direita."
+            )
+        ),
+        MovimentoVideo(
+            "Diagonal para baixo à esquerda",
+            prompt(
+                "A câmera faz um deslocamento diagonal suave para baixo e para a esquerda."
+            )
+        ),
+        MovimentoVideo(
+            "Órbita leve para a direita",
+            prompt(
+                "A câmera faz uma órbita muito leve para a direita, sem alterar a geometria."
+            )
+        ),
+        MovimentoVideo(
+            "Órbita leve para a esquerda",
+            prompt(
+                "A câmera faz uma órbita muito leve para a esquerda, sem alterar a geometria."
+            )
+        ),
+        MovimentoVideo(
+            "Entrada pela porta",
+            prompt(
+                "A câmera avança suavemente como se estivesse entrando pelo acesso principal."
+            )
+        ),
+        MovimentoVideo(
+            "Aproximação da janela",
+            prompt(
+                "A câmera se aproxima suavemente da janela, valorizando luz e profundidade."
+            )
+        ),
+        MovimentoVideo(
+            "Aproximação da varanda",
+            prompt(
+                "A câmera se aproxima suavemente da varanda ou abertura externa."
+            )
+        ),
+        MovimentoVideo(
+            "Revelação panorâmica",
+            prompt(
+                "A câmera faz uma revelação panorâmica lenta, mostrando o ambiente por completo."
+            )
+        ),
+        MovimentoVideo(
+            "Câmera estável com profundidade discreta",
+            prompt(
+                "A câmera permanece quase estável, com profundidade visual muito discreta."
+            )
+        ),
+        MovimentoVideo(
+            "Movimento imobiliário cinematográfico",
+            prompt(
+                "A câmera executa um movimento cinematográfico leve, elegante e natural."
+            )
+        )
+    )
+}
 
 private fun gerarVideoPVideo(
     bitmap: Bitmap,
     duracao: Int,
-    modoMovimento: String
+    prompt: String
 ): String {
     val imagemBase64 = prepararImagemParaVideo(bitmap)
 
     val uploadResposta = postJson(
-        endpoint = "${MOVIIMOVEL_VIDEO_WORKER}/upload-image",
+        endpoint = "$MOVIIMOVEL_VIDEO_WORKER/upload-image",
         body = JSONObject()
             .put("imageBase64", imagemBase64)
             .put("mimeType", "image/jpeg")
@@ -838,13 +691,13 @@ private fun gerarVideoPVideo(
     val imageUrl = uploadResposta.optString("imageUrl")
 
     if (imageUrl.isBlank()) {
-        throw IllegalStateException("O Worker não devolveu a URL da foto.")
+        throw IllegalStateException(
+            "O Worker não devolveu a URL da foto enviada."
+        )
     }
 
-    val prompt = criarPromptVideoImovel(modoMovimento)
-
     val gerarResposta = postJson(
-        endpoint = "${MOVIIMOVEL_VIDEO_WORKER}/generate",
+        endpoint = "$MOVIIMOVEL_VIDEO_WORKER/generate",
         body = JSONObject()
             .put("provider", "preview")
             .put("imageUrl", imageUrl)
@@ -903,45 +756,6 @@ private fun prepararImagemParaVideo(bitmap: Bitmap): String {
     )
 }
 
-private fun criarPromptVideoImovel(
-    modoMovimento: String
-): String {
-    val movimento = when (modoMovimento) {
-        "Entrada pela direita" ->
-            "Movimento lateral suave da esquerda para a direita."
-
-        "Entrada pela esquerda" ->
-            "Movimento lateral suave da direita para a esquerda."
-
-        "Aproximação no centro",
-        "Zoom lento profundo" ->
-            "Aproximação frontal muito leve e estável."
-
-        "Saída cinematográfica" ->
-            "Afastamento suave de câmera."
-
-        "Pan entrando à direita" ->
-            "Pan suave para a direita com leve aproximação."
-
-        "Pan entrando à esquerda" ->
-            "Pan suave para a esquerda com leve aproximação."
-
-        "Subida entrando" ->
-            "Movimento suave de câmera subindo lentamente."
-
-        "Descida entrando" ->
-            "Movimento suave de câmera descendo lentamente."
-
-        else ->
-            "Movimento suave de câmera para apresentação imobiliária."
-    }
-
-    return "$movimento " +
-        "Preserve exatamente paredes, piso, teto, janelas, portas, " +
-        "cortinas, móveis, iluminação, arquitetura e proporções. " +
-        "Não adicionar pessoas, animais, objetos ou mudanças estruturais."
-}
-
 private fun postJson(
     endpoint: String,
     body: JSONObject
@@ -954,6 +768,7 @@ private fun postJson(
         connection.connectTimeout = 30_000
         connection.readTimeout = 180_000
         connection.doOutput = true
+
         connection.setRequestProperty(
             "Content-Type",
             "application/json; charset=utf-8"
@@ -961,13 +776,12 @@ private fun postJson(
 
         connection.outputStream.use {
             it.write(
-                body.toString().toByteArray(
-                    Charsets.UTF_8
-                )
+                body.toString().toByteArray(Charsets.UTF_8)
             )
         }
 
         val code = connection.responseCode
+
         val stream = if (code in 200..299) {
             connection.inputStream
         } else {
@@ -994,16 +808,98 @@ private fun abrirVideo(
     context: Context,
     videoUrl: String
 ) {
+    val uri = Uri.parse(videoUrl)
+
     val intent = Intent(
         Intent.ACTION_VIEW,
-        Uri.parse(videoUrl)
+        uri
     ).apply {
-        setDataAndType(
-            Uri.parse(videoUrl),
-            "video/mp4"
-        )
+        setDataAndType(uri, "video/mp4")
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
     context.startActivity(intent)
+}
+
+private fun salvarVideoNoCelular(
+    context: Context,
+    videoUrl: String
+) {
+    val dataHora = SimpleDateFormat(
+        "yyyyMMdd_HHmmss",
+        Locale.US
+    ).format(Date())
+
+    val fileName = "MoviImovel_${dataHora}.mp4"
+
+    val request = DownloadManager.Request(
+        Uri.parse(videoUrl)
+    ).apply {
+        setTitle(fileName)
+        setDescription("Vídeo gerado pelo MoviImovel")
+        setMimeType("video/mp4")
+        setNotificationVisibility(
+            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+        )
+        setDestinationInExternalPublicDir(
+            Environment.DIRECTORY_DOWNLOADS,
+            fileName
+        )
+        setAllowedOverMetered(true)
+        setAllowedOverRoaming(true)
+    }
+
+    val downloadManager = context.getSystemService(
+        Context.DOWNLOAD_SERVICE
+    ) as DownloadManager
+
+    downloadManager.enqueue(request)
+}
+
+private fun carregarBitmapAltaQualidade(
+    context: Context,
+    uriTexto: String
+): Bitmap? {
+    return try {
+        val uri = Uri.parse(uriTexto)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val source = ImageDecoder.createSource(
+                context.contentResolver,
+                uri
+            )
+
+            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+
+                val maiorLado = maxOf(
+                    info.size.width,
+                    info.size.height
+                )
+
+                val limite = 4096
+
+                if (maiorLado > limite) {
+                    val proporcao =
+                        limite.toFloat() / maiorLado.toFloat()
+
+                    decoder.setTargetSize(
+                        (info.size.width * proporcao).toInt(),
+                        (info.size.height * proporcao).toInt()
+                    )
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            MediaStore.Images.Media.getBitmap(
+                context.contentResolver,
+                uri
+            ).copy(
+                Bitmap.Config.ARGB_8888,
+                false
+            )
+        }
+    } catch (_: Exception) {
+        null
+    }
 }
