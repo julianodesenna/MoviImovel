@@ -1,0 +1,25 @@
+name: Publicar Worker MoviImovel
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "cloudflare-grok-worker/**"
+      - ".github/workflows/deploy-cloudflare-worker.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Publicar Worker na Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare-grok-worker
+          command: deploy

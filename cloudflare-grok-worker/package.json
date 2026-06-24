@@ -1,0 +1,9 @@
+{
+  "name": "moviimovel-grok-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dry-run": "wrangler deploy --dry-run"
+  }
+}
