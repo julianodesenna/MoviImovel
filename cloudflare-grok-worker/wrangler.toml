@@ -1,0 +1,10 @@
+name = "moviimovel-grok-worker"
+main = "worker.js"
+compatibility_date = "2026-06-24"
+
+[ai]
+binding = "AI"
+
+[vars]
+GROK_480P_PER_SECOND = "0.08"
+GROK_720P_PER_SECOND = "0.14"
