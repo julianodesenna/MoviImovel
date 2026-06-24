@@ -133,6 +133,10 @@ fun MoviImovelApp() {
         mutableStateOf(false)
     }
 
+    var confirmarGeracao by remember {
+        mutableStateOf(false)
+    }
+
     val seletorFoto = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -207,6 +211,99 @@ fun MoviImovelApp() {
                 ) {
                     Text("Fechar")
                 }
+            }
+        )
+    }
+
+    if (confirmarGeracao) {
+        val custoPorSegundo = when (modoQualidade) {
+            "Rascunho 720p" -> 0.005
+            "Final 720p" -> 0.02
+            else -> 0.04
+        }
+
+        val custoDolar = custoPorSegundo * duracaoVideo
+        val custoReal = custoDolar * 5.22
+
+        AlertDialog(
+            onDismissRequest = {
+                if (!gerandoVideo) confirmarGeracao = false
+            },
+            title = {
+                Text(
+                    text = "Confirmar geração",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = "Movimento: " + movimentoSelecionado.nome)
+                    Text(text = "Duração: " + duracaoVideo + " segundos")
+                    Text(text = "Qualidade: " + modoQualidade)
+                    Text(
+                        text = "Custo estimado: US$ " +
+                            String.format(Locale.US, "%.3f", custoDolar) +
+                            " • cerca de R$ " +
+                            String.format(Locale.US, "%.2f", custoReal),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "O vídeo só será enviado para a IA depois de tocar em Gerar vídeo.",
+                        color = Color(0xFF5C5C5C),
+                        fontSize = 13.sp
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { confirmarGeracao = false },
+                    enabled = !gerandoVideo
+                ) { Text("Cancelar") }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val foto = fotoSelecionada
+                        if (foto == null) {
+                            confirmarGeracao = false
+                            mensagem = "Selecione uma foto antes de gerar."
+                            return@Button
+                        }
+                        if (promptVideo.isBlank()) {
+                            confirmarGeracao = false
+                            mensagem = "O prompt não pode ficar vazio."
+                            return@Button
+                        }
+                        confirmarGeracao = false
+                        gerandoVideo = true
+                        mensagem = "Enviando foto e gerando vídeo de " + duracaoVideo + " segundos..."
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val provider = if (modoQualidade == "Rascunho 720p") "preview" else "pvideo"
+                                val resolution = if (modoQualidade == "Final 1080p") "1080p" else "720p"
+                                val videoUrl = gerarVideoPVideo(
+                                    bitmap = foto,
+                                    duracao = duracaoVideo,
+                                    prompt = promptVideo,
+                                    provider = provider,
+                                    resolution = resolution
+                                )
+                                withContext(Dispatchers.Main) {
+                                    ultimoVideoUrl = videoUrl
+                                    gerandoVideo = false
+                                    mensagem = "Vídeo pronto e salvo permanentemente no R2."
+                                    abrirVideo(context, videoUrl)
+                                }
+                            } catch (erro: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    gerandoVideo = false
+                                    mensagem = "Erro ao gerar vídeo: " + erro.message
+                                }
+                            }
+                        }
+                    },
+                    enabled = !gerandoVideo
+                ) { Text("Gerar vídeo") }
             }
         )
     }
@@ -479,9 +576,7 @@ fun MoviImovelApp() {
 
                 Button(
                     onClick = {
-                        val foto = fotoSelecionada
-
-                        if (foto == null) {
+                        if (fotoSelecionada == null) {
                             mensagem = "Selecione uma foto antes de gerar."
                             return@Button
                         }
@@ -491,51 +586,7 @@ fun MoviImovelApp() {
                             return@Button
                         }
 
-                        gerandoVideo = true
-                        mensagem =
-                            "Enviando foto e gerando vídeo de $duracaoVideo segundos..."
-
-                        scope.launch(Dispatchers.IO) {
-                            try {
-                                val provider = if (
-                                    modoQualidade == "Rascunho 720p"
-                                ) {
-                                    "preview"
-                                } else {
-                                    "pvideo"
-                                }
-
-                                val resolution = if (
-                                    modoQualidade == "Final 1080p"
-                                ) {
-                                    "1080p"
-                                } else {
-                                    "720p"
-                                }
-
-                                val videoUrl = gerarVideoPVideo(
-                                    bitmap = foto,
-                                    duracao = duracaoVideo,
-                                    prompt = promptVideo,
-                                    provider = provider,
-                                    resolution = resolution
-                                )
-
-                                withContext(Dispatchers.Main) {
-                                    ultimoVideoUrl = videoUrl
-                                    gerandoVideo = false
-                                    mensagem =
-                                        "Vídeo pronto e salvo permanentemente no R2."
-                                    abrirVideo(context, videoUrl)
-                                }
-                            } catch (erro: Exception) {
-                                withContext(Dispatchers.Main) {
-                                    gerandoVideo = false
-                                    mensagem =
-                                        "Erro ao gerar vídeo: ${erro.message}"
-                                }
-                            }
-                        }
+                        confirmarGeracao = true
                     },
                     enabled = fotoSelecionada != null && !gerandoVideo,
                     modifier = Modifier
@@ -630,114 +681,59 @@ fun MoviImovelApp() {
 }
 
 private fun listaMovimentosVideo(): List<MovimentoVideo> {
-    fun prompt(
-        comandoPrincipal: String,
-        proibicoes: String
-    ): String {
+    fun prompt(comando: String, bloqueios: String): String {
         return """
 COMANDO PRINCIPAL DE CÂMERA:
-$comandoPrincipal
+$comando
 
-REGRA OBRIGATÓRIA:
-Execute somente esse movimento.
-$proibicoes
-
+REGRAS OBRIGATÓRIAS:
+Execute somente o movimento descrito acima.
+$bloqueios
 Mantenha o enquadramento inicial reconhecível.
-Não faça movimentos extras, não invente outro tipo de câmera
-e não transforme o movimento em aproximação automática.
+Não invente outro movimento e não transforme em aproximação automática.
 
-Crie um vídeo imobiliário realista.
-Preserve rigorosamente paredes, piso, teto, portas, janelas,
-cortinas, pia, fogão, móveis, iluminação, arquitetura,
-materiais e proporções originais.
-
-Não adicionar pessoas, silhuetas humanas, animais, objetos,
-móveis, reformas, deformações, duplicações, textos,
-movimentos de pessoas ou elementos inexistentes.
+Vídeo imobiliário realista. Preserve rigorosamente paredes, piso, teto, portas,
+janelas, cortinas, pia, fogão, móveis, iluminação, arquitetura, materiais e proporções.
+Não adicionar pessoas, silhuetas, animais, objetos, textos, reformas, deformações,
+duplicações, itens surgindo, itens desaparecendo ou mudanças estruturais.
         """.trimIndent()
     }
 
     return listOf(
-        MovimentoVideo(
-            "Pan da esquerda para a direita",
-            prompt(
-                "Deslize a câmera horizontalmente da esquerda para a direita, em linha reta e lentamente.",
-                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO suba, NÃO desça e NÃO faça diagonal."
-            )
-        ),
-        MovimentoVideo(
-            "Pan da direita para a esquerda",
-            prompt(
-                "Deslize a câmera horizontalmente da direita para a esquerda, em linha reta e lentamente.",
-                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO suba, NÃO desça e NÃO faça diagonal."
-            )
-        ),
-        MovimentoVideo(
-            "Aproximação frontal suave",
-            prompt(
-                "Aproxime a câmera lentamente para frente, mantendo o centro do ambiente como referência.",
-                "NÃO faça pan lateral. NÃO suba. NÃO desça. NÃO faça órbita ou diagonal."
-            )
-        ),
-        MovimentoVideo(
-            "Afastamento suave",
-            prompt(
-                "Afaste a câmera lentamente para trás, revelando um pouco mais do ambiente.",
-                "NÃO faça pan lateral. NÃO aproxime. NÃO suba. NÃO desça. NÃO faça diagonal."
-            )
-        ),
-        MovimentoVideo(
-            "Zoom leve para dentro",
-            prompt(
-                "Faça somente zoom óptico leve para dentro, sem deslocar a posição da câmera.",
-                "NÃO faça pan. NÃO faça dolly para frente. NÃO mova verticalmente. NÃO altere o enquadramento."
-            )
-        ),
-        MovimentoVideo(
-            "Zoom leve para fora",
-            prompt(
-                "Faça somente zoom óptico leve para fora, sem deslocar a posição da câmera.",
-                "NÃO faça pan. NÃO afaste a câmera fisicamente. NÃO mova verticalmente. NÃO altere o enquadramento."
-            )
-        ),
-        MovimentoVideo(
-            "Subida suave",
-            prompt(
-                "Mova a câmera verticalmente para cima de forma lenta e pequena.",
-                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO deslize lateralmente."
-            )
-        ),
-        MovimentoVideo(
-            "Descida suave",
-            prompt(
-                "Mova a câmera verticalmente para baixo de forma lenta e pequena.",
-                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO deslize lateralmente."
-            )
-        ),
-        MovimentoVideo(
-            "Diagonal superior direita",
-            prompt(
-                "Desloque a câmera suavemente na diagonal para cima e para a direita.",
-                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO transforme em pan horizontal puro."
-            )
-        ),
-        MovimentoVideo(
-            "Diagonal superior esquerda",
-            prompt(
-                "Desloque a câmera suavemente na diagonal para cima e para a esquerda.",
-                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO transforme em pan horizontal puro."
-            )
-        ),
-        MovimentoVideo(
-            "Câmera quase parada",
-            prompt(
-                "Mantenha a câmera praticamente parada, com apenas profundidade visual muito discreta.",
-                "NÃO faça zoom perceptível. NÃO faça pan. NÃO aproxime. NÃO afaste. NÃO altere objetos."
-            )
-        )
+        MovimentoVideo("Pan esquerda → direita lento", prompt("Deslize a câmera horizontalmente da esquerda para a direita, em linha reta e lentamente.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO suba. NÃO desça. NÃO faça diagonal.")),
+        MovimentoVideo("Pan esquerda → direita médio", prompt("Deslize a câmera horizontalmente da esquerda para a direita, em linha reta, com velocidade média.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO suba. NÃO desça. NÃO faça diagonal.")),
+        MovimentoVideo("Pan direita → esquerda lento", prompt("Deslize a câmera horizontalmente da direita para a esquerda, em linha reta e lentamente.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO suba. NÃO desça. NÃO faça diagonal.")),
+        MovimentoVideo("Pan direita → esquerda médio", prompt("Deslize a câmera horizontalmente da direita para a esquerda, em linha reta, com velocidade média.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO suba. NÃO desça. NÃO faça diagonal.")),
+        MovimentoVideo("Travelling curto para direita", prompt("Mova a câmera fisicamente poucos centímetros para a direita, mantendo linhas verticais naturais.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO faça órbita. NÃO mova verticalmente.")),
+        MovimentoVideo("Travelling curto para esquerda", prompt("Mova a câmera fisicamente poucos centímetros para a esquerda, mantendo linhas verticais naturais.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO faça órbita. NÃO mova verticalmente.")),
+        MovimentoVideo("Aproximação frontal suave", prompt("Aproxime a câmera lentamente para frente, mantendo o centro do ambiente como referência.", "NÃO faça pan lateral. NÃO suba. NÃO desça. NÃO faça órbita. NÃO faça diagonal.")),
+        MovimentoVideo("Aproximação frontal média", prompt("Aproxime a câmera para frente com intensidade média, preservando todos os objetos e proporções.", "NÃO faça pan lateral. NÃO suba. NÃO desça. NÃO faça órbita. NÃO faça diagonal.")),
+        MovimentoVideo("Afastamento suave", prompt("Afaste a câmera lentamente para trás, revelando um pouco mais do ambiente.", "NÃO faça pan lateral. NÃO aproxime. NÃO suba. NÃO desça. NÃO faça diagonal.")),
+        MovimentoVideo("Afastamento médio", prompt("Afaste a câmera para trás com intensidade média, revelando mais do ambiente.", "NÃO faça pan lateral. NÃO aproxime. NÃO suba. NÃO desça. NÃO faça diagonal.")),
+        MovimentoVideo("Zoom leve para dentro", prompt("Faça somente zoom óptico leve para dentro, sem deslocar a posição da câmera.", "NÃO faça pan. NÃO faça dolly para frente. NÃO mova verticalmente. NÃO altere a perspectiva.")),
+        MovimentoVideo("Zoom médio para dentro", prompt("Faça somente zoom óptico médio para dentro, sem deslocar a posição da câmera.", "NÃO faça pan. NÃO faça dolly para frente. NÃO mova verticalmente. NÃO altere a perspectiva.")),
+        MovimentoVideo("Zoom leve para fora", prompt("Faça somente zoom óptico leve para fora, sem deslocar a posição da câmera.", "NÃO faça pan. NÃO afaste a câmera fisicamente. NÃO mova verticalmente. NÃO altere a perspectiva.")),
+        MovimentoVideo("Zoom médio para fora", prompt("Faça somente zoom óptico médio para fora, sem deslocar a posição da câmera.", "NÃO faça pan. NÃO afaste a câmera fisicamente. NÃO mova verticalmente. NÃO altere a perspectiva.")),
+        MovimentoVideo("Subida suave", prompt("Mova a câmera verticalmente para cima, de forma lenta e pequena.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO deslize lateralmente.")),
+        MovimentoVideo("Descida suave", prompt("Mova a câmera verticalmente para baixo, de forma lenta e pequena.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO deslize lateralmente.")),
+        MovimentoVideo("Inclinação para cima", prompt("Incline discretamente a câmera para cima, como um tilt-up controlado.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO deslize lateralmente.")),
+        MovimentoVideo("Inclinação para baixo", prompt("Incline discretamente a câmera para baixo, como um tilt-down controlado.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO deslize lateralmente.")),
+        MovimentoVideo("Diagonal superior direita", prompt("Desloque a câmera suavemente na diagonal para cima e para a direita.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO transforme em pan horizontal puro.")),
+        MovimentoVideo("Diagonal superior esquerda", prompt("Desloque a câmera suavemente na diagonal para cima e para a esquerda.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO transforme em pan horizontal puro.")),
+        MovimentoVideo("Diagonal inferior direita", prompt("Desloque a câmera suavemente na diagonal para baixo e para a direita.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO transforme em pan horizontal puro.")),
+        MovimentoVideo("Diagonal inferior esquerda", prompt("Desloque a câmera suavemente na diagonal para baixo e para a esquerda.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO transforme em pan horizontal puro.")),
+        MovimentoVideo("Órbita leve para direita", prompt("Faça uma órbita muito leve da câmera para a direita, mantendo o centro do ambiente estável.", "NÃO faça zoom. NÃO aproxime. NÃO afaste demais. NÃO distorça paredes, portas ou janelas.")),
+        MovimentoVideo("Órbita leve para esquerda", prompt("Faça uma órbita muito leve da câmera para a esquerda, mantendo o centro do ambiente estável.", "NÃO faça zoom. NÃO aproxime. NÃO afaste demais. NÃO distorça paredes, portas ou janelas.")),
+        MovimentoVideo("Entrada lenta no ambiente", prompt("Inicie no enquadramento original e faça uma entrada frontal muito lenta e estável no ambiente.", "NÃO faça pan lateral. NÃO faça zoom óptico. NÃO altere objetos ou estrutura.")),
+        MovimentoVideo("Saída lenta do ambiente", prompt("Inicie no enquadramento original e faça uma saída frontal muito lenta e estável do ambiente.", "NÃO faça pan lateral. NÃO faça zoom óptico. NÃO altere objetos ou estrutura.")),
+        MovimentoVideo("Revelação panorâmica para direita", prompt("Comece no enquadramento original e revele lentamente mais área à direita por deslocamento horizontal.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO mova verticalmente.")),
+        MovimentoVideo("Revelação panorâmica para esquerda", prompt("Comece no enquadramento original e revele lentamente mais área à esquerda por deslocamento horizontal.", "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO mova verticalmente.")),
+        MovimentoVideo("Foco discreto na janela", prompt("Faça uma aproximação frontal muito pequena e elegante na direção da janela, mantendo todo o ambiente reconhecível.", "NÃO faça pan. NÃO altere a luz externa. NÃO crie paisagem, pessoas ou objetos novos.")),
+        MovimentoVideo("Foco discreto na porta", prompt("Faça uma aproximação frontal muito pequena e elegante na direção da porta, mantendo todo o ambiente reconhecível.", "NÃO faça pan. NÃO altere a porta, paredes, objetos ou proporções.")),
+        MovimentoVideo("Câmera quase parada", prompt("Mantenha a câmera praticamente parada, com apenas profundidade visual muito discreta.", "NÃO faça zoom perceptível. NÃO faça pan. NÃO aproxime. NÃO afaste. NÃO altere objetos.")),
+        MovimentoVideo("Microprofundidade discreta", prompt("Mantenha a câmera estável com micro movimento de profundidade quase imperceptível e natural.", "NÃO faça zoom perceptível. NÃO faça pan. NÃO aproxime demais. NÃO altere objetos."))
     )
 }
-
 private fun gerarVideoPVideo(
     bitmap: Bitmap,
     duracao: Int,
