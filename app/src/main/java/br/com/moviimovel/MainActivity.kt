@@ -70,7 +70,9 @@ class MainActivity : ComponentActivity() {
 private data class MovimentoCamera(
     val escala: Float,
     val deslocamentoX: Float,
-    val deslocamentoY: Float
+    val deslocamentoY: Float,
+    val origemX: Float,
+    val origemY: Float
 )
 
 @Composable
@@ -99,12 +101,12 @@ fun MoviImovelApp() {
     }
 
     var modoAtual by remember {
-        mutableStateOf("Entrada suave")
+        mutableStateOf("Entrada frontal")
     }
 
     var mensagem by remember {
         mutableStateOf(
-            "Selecione uma foto. Este modo preserva a foto original."
+            "Selecione uma foto. Os movimentos usam a imagem original."
         )
     }
 
@@ -124,7 +126,7 @@ fun MoviImovelApp() {
                 movimentoAtivo = false
 
                 mensagem =
-                    "Foto carregada em alta qualidade. Escolha e teste um movimento."
+                    "Foto carregada em alta qualidade. Escolha um movimento."
             } else {
                 mensagem = "Não foi possível carregar essa foto."
             }
@@ -167,7 +169,7 @@ fun MoviImovelApp() {
                 )
 
                 Text(
-                    text = "Teste local de qualidade máxima",
+                    text = "Movimentos de câmera com foto original nítida",
                     color = Color(0xFFB8C2C8),
                     fontSize = 15.sp
                 )
@@ -271,7 +273,7 @@ fun MoviImovelApp() {
                         mensagem = if (movimentoAtivo) {
                             "Movimento ativo: $modoAtual."
                         } else {
-                            "Movimento pausado. Foto original parada."
+                            "Movimento pausado."
                         }
                     },
                     enabled = fotoSelecionada != null && !processandoMapa,
@@ -374,12 +376,20 @@ private fun proximoModo(
     modoAtual: String
 ): String {
     return when (modoAtual) {
-        "Entrada suave" -> "Pan para direita"
-        "Pan para direita" -> "Pan para esquerda"
-        "Pan para esquerda" -> "Diagonal cinematográfica"
-        "Diagonal cinematográfica" -> "Subida lenta"
-        "Subida lenta" -> "Zoom de apresentação"
-        else -> "Entrada suave"
+        "Entrada frontal" -> "Entrada pela direita"
+        "Entrada pela direita" -> "Entrada pela esquerda"
+        "Entrada pela esquerda" -> "Aproximação no centro"
+        "Aproximação no centro" -> "Saída cinematográfica"
+        "Saída cinematográfica" -> "Pan entrando à direita"
+        "Pan entrando à direita" -> "Pan entrando à esquerda"
+        "Pan entrando à esquerda" -> "Diagonal entrando"
+        "Diagonal entrando" -> "Subida entrando"
+        "Subida entrando" -> "Descida entrando"
+        "Descida entrando" -> "Foco no canto superior"
+        "Foco no canto superior" -> "Foco no canto inferior"
+        "Foco no canto inferior" -> "Zoom lento profundo"
+        "Zoom lento profundo" -> "Passeio amplo"
+        else -> "Entrada frontal"
     }
 }
 
@@ -420,7 +430,11 @@ fun PreviewImagemAltaQualidade(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            transformOrigin = TransformOrigin.Center
+                            transformOrigin = TransformOrigin(
+                                pivotFractionX = movimento.origemX,
+                                pivotFractionY = movimento.origemY
+                            )
+
                             scaleX = movimento.escala
                             scaleY = movimento.escala
                             translationX = movimento.deslocamentoX
@@ -467,58 +481,152 @@ private fun calcularMovimentoLocal(
         return MovimentoCamera(
             escala = 1f,
             deslocamentoX = 0f,
-            deslocamentoY = 0f
+            deslocamentoY = 0f,
+            origemX = 0.5f,
+            origemY = 0.5f
         )
     }
 
     val centro = progresso - 0.5f
 
     return when (modoAtual) {
-        "Pan para direita" -> {
+        "Entrada pela direita" -> {
             MovimentoCamera(
-                escala = 1.115f,
-                deslocamentoX = centro * 105f,
-                deslocamentoY = 0f
+                escala = 1.10f + (progresso * 0.22f),
+                deslocamentoX = centro * 92f,
+                deslocamentoY = centro * -10f,
+                origemX = 0.72f,
+                origemY = 0.52f
             )
         }
 
-        "Pan para esquerda" -> {
+        "Entrada pela esquerda" -> {
             MovimentoCamera(
-                escala = 1.115f,
-                deslocamentoX = centro * -105f,
-                deslocamentoY = 0f
+                escala = 1.10f + (progresso * 0.22f),
+                deslocamentoX = centro * -92f,
+                deslocamentoY = centro * -10f,
+                origemX = 0.28f,
+                origemY = 0.52f
             )
         }
 
-        "Diagonal cinematográfica" -> {
+        "Aproximação no centro" -> {
             MovimentoCamera(
-                escala = 1.125f,
-                deslocamentoX = centro * 82f,
-                deslocamentoY = centro * -54f
-            )
-        }
-
-        "Subida lenta" -> {
-            MovimentoCamera(
-                escala = 1.12f,
-                deslocamentoX = 0f,
-                deslocamentoY = centro * -92f
-            )
-        }
-
-        "Zoom de apresentação" -> {
-            MovimentoCamera(
-                escala = 1.04f + (progresso * 0.115f),
+                escala = 1.04f + (progresso * 0.33f),
                 deslocamentoX = centro * 16f,
-                deslocamentoY = centro * -10f
+                deslocamentoY = centro * -14f,
+                origemX = 0.5f,
+                origemY = 0.5f
+            )
+        }
+
+        "Saída cinematográfica" -> {
+            MovimentoCamera(
+                escala = 1.38f - (progresso * 0.30f),
+                deslocamentoX = centro * -22f,
+                deslocamentoY = centro * 16f,
+                origemX = 0.5f,
+                origemY = 0.5f
+            )
+        }
+
+        "Pan entrando à direita" -> {
+            MovimentoCamera(
+                escala = 1.12f + (progresso * 0.20f),
+                deslocamentoX = centro * 118f,
+                deslocamentoY = centro * -26f,
+                origemX = 0.68f,
+                origemY = 0.48f
+            )
+        }
+
+        "Pan entrando à esquerda" -> {
+            MovimentoCamera(
+                escala = 1.12f + (progresso * 0.20f),
+                deslocamentoX = centro * -118f,
+                deslocamentoY = centro * -26f,
+                origemX = 0.32f,
+                origemY = 0.48f
+            )
+        }
+
+        "Diagonal entrando" -> {
+            MovimentoCamera(
+                escala = 1.10f + (progresso * 0.24f),
+                deslocamentoX = centro * 92f,
+                deslocamentoY = centro * -72f,
+                origemX = 0.65f,
+                origemY = 0.35f
+            )
+        }
+
+        "Subida entrando" -> {
+            MovimentoCamera(
+                escala = 1.09f + (progresso * 0.23f),
+                deslocamentoX = centro * 12f,
+                deslocamentoY = centro * -118f,
+                origemX = 0.5f,
+                origemY = 0.28f
+            )
+        }
+
+        "Descida entrando" -> {
+            MovimentoCamera(
+                escala = 1.09f + (progresso * 0.23f),
+                deslocamentoX = centro * -12f,
+                deslocamentoY = centro * 118f,
+                origemX = 0.5f,
+                origemY = 0.72f
+            )
+        }
+
+        "Foco no canto superior" -> {
+            MovimentoCamera(
+                escala = 1.15f + (progresso * 0.22f),
+                deslocamentoX = centro * 48f,
+                deslocamentoY = centro * -86f,
+                origemX = 0.72f,
+                origemY = 0.22f
+            )
+        }
+
+        "Foco no canto inferior" -> {
+            MovimentoCamera(
+                escala = 1.15f + (progresso * 0.22f),
+                deslocamentoX = centro * -48f,
+                deslocamentoY = centro * 86f,
+                origemX = 0.28f,
+                origemY = 0.78f
+            )
+        }
+
+        "Zoom lento profundo" -> {
+            MovimentoCamera(
+                escala = 1.02f + (progresso * 0.40f),
+                deslocamentoX = centro * 18f,
+                deslocamentoY = centro * -18f,
+                origemX = 0.5f,
+                origemY = 0.48f
+            )
+        }
+
+        "Passeio amplo" -> {
+            MovimentoCamera(
+                escala = 1.18f + (progresso * 0.16f),
+                deslocamentoX = centro * 128f,
+                deslocamentoY = centro * -42f,
+                origemX = 0.62f,
+                origemY = 0.46f
             )
         }
 
         else -> {
             MovimentoCamera(
-                escala = 1.055f + (progresso * 0.095f),
-                deslocamentoX = centro * 28f,
-                deslocamentoY = centro * -18f
+                escala = 1.05f + (progresso * 0.30f),
+                deslocamentoX = centro * 24f,
+                deslocamentoY = centro * -18f,
+                origemX = 0.5f,
+                origemY = 0.5f
             )
         }
     }
