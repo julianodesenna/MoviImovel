@@ -1,3 +1,24 @@
+
+function decodeBase64ToBytes(base64Text) {
+  const binary = atob(base64Text)
+  const bytes = new Uint8Array(binary.length)
+
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+
+  return bytes
+}
+
+function createUploadedImageKey() {
+  const now = new Date()
+  const year = now.getUTCFullYear()
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(now.getUTCDate()).padStart(2, "0")
+
+  return `uploads/${year}-${month}-${day}/foto-${crypto.randomUUID()}.jpg`
+}
+
 function json(data, status = 200) {
   return Response.json(data, { status })
 }
@@ -267,6 +288,111 @@ async function runPVideo({
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+
+    if (
+      request.method === "GET" &&
+      url.pathname.startsWith("/images/")
+    ) {
+      const key = decodeURIComponent(
+        url.pathname.slice("/images/".length)
+      )
+
+      if (!key || key.includes("..")) {
+        return new Response("Imagem inválida.", { status: 400 })
+      }
+
+      const object = await env.VIDEOS.get(key)
+
+      if (!object) {
+        return new Response("Imagem não encontrada.", { status: 404 })
+      }
+
+      const headers = new Headers()
+      object.writeHttpMetadata(headers)
+      headers.set("Cache-Control", "public, max-age=31536000, immutable")
+      headers.set("Content-Disposition", "inline")
+
+      return new Response(object.body, { headers })
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/upload-image"
+    ) {
+      try {
+        const body = await request.json()
+        const imageBase64 = String(body.imageBase64 || "")
+        const mimeType = String(body.mimeType || "image/jpeg")
+
+        if (!imageBase64) {
+          return json(
+            {
+              ok: false,
+              error: "imageBase64 é obrigatório."
+            },
+            400
+          )
+        }
+
+        if (!mimeType.startsWith("image/")) {
+          return json(
+            {
+              ok: false,
+              error: "mimeType deve ser uma imagem."
+            },
+            400
+          )
+        }
+
+        const bytes = decodeBase64ToBytes(imageBase64)
+
+        if (bytes.byteLength < 100) {
+          return json(
+            {
+              ok: false,
+              error: "A imagem enviada está vazia ou inválida."
+            },
+            400
+          )
+        }
+
+        if (bytes.byteLength > 15 * 1024 * 1024) {
+          return json(
+            {
+              ok: false,
+              error: "Imagem muito grande. O limite é 15 MB."
+            },
+            413
+          )
+        }
+
+        const key = createUploadedImageKey()
+
+        await env.VIDEOS.put(key, bytes, {
+          httpMetadata: {
+            contentType: mimeType
+          },
+          customMetadata: {
+            origem: "MoviImovel APK"
+          }
+        })
+
+        return json({
+          ok: true,
+          imageKey: key,
+          imageUrl: `${url.origin}/images/${key}`
+        })
+      } catch (error) {
+        return json(
+          {
+            ok: false,
+            error: error?.message || "Erro ao enviar imagem."
+          },
+          500
+        )
+      }
+    }
+
 
     if (
       request.method === "GET" &&

@@ -1,5 +1,14 @@
 package br.com.moviimovel
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import org.json.JSONObject
+import java.net.URL
+import java.net.HttpURLConnection
+import java.io.ByteArrayOutputStream
+import android.util.Base64
+import android.net.Uri
+import android.content.Intent
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
@@ -110,6 +119,19 @@ fun MoviImovelApp() {
         )
     }
 
+
+    var duracaoVideo by remember {
+        mutableStateOf(3)
+    }
+
+    var gerandoVideo by remember {
+        mutableStateOf(false)
+    }
+
+    var ultimoVideoUrl by remember {
+        mutableStateOf<String?>(null)
+    }
+
     val seletorFoto = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -158,6 +180,7 @@ fun MoviImovelApp() {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(11.dp)
             ) {
@@ -354,6 +377,115 @@ fun MoviImovelApp() {
                         } else {
                             "Ver mapa de profundidade"
                         },
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+
+                Button(
+                    onClick = {
+                        duracaoVideo = when (duracaoVideo) {
+                            2 -> 3
+                            3 -> 5
+                            5 -> 10
+                            10 -> 15
+                            15 -> 20
+                            else -> 2
+                        }
+
+                        mensagem = "Duração escolhida: ${duracaoVideo} segundos."
+                    },
+                    enabled = fotoSelecionada != null && !gerandoVideo,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF284B63),
+                        disabledContainerColor = Color(0xFF20282E)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "Duração do vídeo: ${duracaoVideo} segundos",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        val foto = fotoSelecionada ?: return@Button
+
+                        gerandoVideo = true
+                        movimentoAtivo = false
+                        mostrandoMapa = false
+                        mensagem = "Enviando foto e gerando vídeo em ${duracaoVideo} segundos..."
+
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val videoUrl = gerarVideoPVideo(
+                                    bitmap = foto,
+                                    duracao = duracaoVideo,
+                                    modoMovimento = modoAtual
+                                )
+
+                                withContext(Dispatchers.Main) {
+                                    ultimoVideoUrl = videoUrl
+                                    gerandoVideo = false
+                                    mensagem = "Vídeo pronto e salvo permanentemente."
+                                    abrirVideo(context, videoUrl)
+                                }
+                            } catch (erro: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    gerandoVideo = false
+                                    mensagem = "Erro ao gerar vídeo: ${erro.message}"
+                                }
+                            }
+                        }
+                    },
+                    enabled = fotoSelecionada != null && !gerandoVideo,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFD46A27),
+                        disabledContainerColor = Color(0xFF40312A)
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        text = if (gerandoVideo) {
+                            "Gerando vídeo IA..."
+                        } else {
+                            "Gerar vídeo IA: ${duracaoVideo} s"
+                        },
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        ultimoVideoUrl?.let {
+                            abrirVideo(context, it)
+                        }
+                    },
+                    enabled = ultimoVideoUrl != null && !gerandoVideo,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF236D52),
+                        disabledContainerColor = Color(0xFF20282E)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "Abrir último vídeo salvo",
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
@@ -677,4 +809,201 @@ private fun carregarBitmapAltaQualidade(
     } catch (_: Exception) {
         null
     }
+}
+
+
+private const val MOVIIMOVEL_VIDEO_WORKER =
+    "https://moviimovel-grok-worker.julianoocorretor.workers.dev"
+
+private fun gerarVideoPVideo(
+    bitmap: Bitmap,
+    duracao: Int,
+    modoMovimento: String
+): String {
+    val imagemBase64 = prepararImagemParaVideo(bitmap)
+
+    val uploadResposta = postJson(
+        endpoint = "${MOVIIMOVEL_VIDEO_WORKER}/upload-image",
+        body = JSONObject()
+            .put("imageBase64", imagemBase64)
+            .put("mimeType", "image/jpeg")
+    )
+
+    if (!uploadResposta.optBoolean("ok", false)) {
+        throw IllegalStateException(
+            uploadResposta.optString("error", "Falha ao enviar foto.")
+        )
+    }
+
+    val imageUrl = uploadResposta.optString("imageUrl")
+
+    if (imageUrl.isBlank()) {
+        throw IllegalStateException("O Worker não devolveu a URL da foto.")
+    }
+
+    val prompt = criarPromptVideoImovel(modoMovimento)
+
+    val gerarResposta = postJson(
+        endpoint = "${MOVIIMOVEL_VIDEO_WORKER}/generate",
+        body = JSONObject()
+            .put("provider", "preview")
+            .put("imageUrl", imageUrl)
+            .put("prompt", prompt)
+            .put("duration", duracao)
+            .put("resolution", "720p")
+            .put("aspectRatio", "16:9")
+            .put("fps", 24)
+    )
+
+    if (!gerarResposta.optBoolean("ok", false)) {
+        throw IllegalStateException(
+            gerarResposta.optString("error", "Falha ao gerar vídeo.")
+        )
+    }
+
+    val videoUrl = gerarResposta.optString("videoUrl")
+
+    if (videoUrl.isBlank()) {
+        throw IllegalStateException(
+            "O vídeo foi gerado, mas não foi devolvida uma URL permanente."
+        )
+    }
+
+    return videoUrl
+}
+
+private fun prepararImagemParaVideo(bitmap: Bitmap): String {
+    val maiorLado = maxOf(bitmap.width, bitmap.height)
+    val limite = 1920
+
+    val imagemFinal = if (maiorLado > limite) {
+        val proporcao = limite.toFloat() / maiorLado.toFloat()
+
+        Bitmap.createScaledBitmap(
+            bitmap,
+            (bitmap.width * proporcao).toInt(),
+            (bitmap.height * proporcao).toInt(),
+            true
+        )
+    } else {
+        bitmap
+    }
+
+    val output = ByteArrayOutputStream()
+
+    imagemFinal.compress(
+        Bitmap.CompressFormat.JPEG,
+        84,
+        output
+    )
+
+    return Base64.encodeToString(
+        output.toByteArray(),
+        Base64.NO_WRAP
+    )
+}
+
+private fun criarPromptVideoImovel(
+    modoMovimento: String
+): String {
+    val movimento = when (modoMovimento) {
+        "Entrada pela direita" ->
+            "Movimento lateral suave da esquerda para a direita."
+
+        "Entrada pela esquerda" ->
+            "Movimento lateral suave da direita para a esquerda."
+
+        "Aproximação no centro",
+        "Zoom lento profundo" ->
+            "Aproximação frontal muito leve e estável."
+
+        "Saída cinematográfica" ->
+            "Afastamento suave de câmera."
+
+        "Pan entrando à direita" ->
+            "Pan suave para a direita com leve aproximação."
+
+        "Pan entrando à esquerda" ->
+            "Pan suave para a esquerda com leve aproximação."
+
+        "Subida entrando" ->
+            "Movimento suave de câmera subindo lentamente."
+
+        "Descida entrando" ->
+            "Movimento suave de câmera descendo lentamente."
+
+        else ->
+            "Movimento suave de câmera para apresentação imobiliária."
+    }
+
+    return "$movimento " +
+        "Preserve exatamente paredes, piso, teto, janelas, portas, " +
+        "cortinas, móveis, iluminação, arquitetura e proporções. " +
+        "Não adicionar pessoas, animais, objetos ou mudanças estruturais."
+}
+
+private fun postJson(
+    endpoint: String,
+    body: JSONObject
+): JSONObject {
+    val connection = URL(endpoint)
+        .openConnection() as HttpURLConnection
+
+    try {
+        connection.requestMethod = "POST"
+        connection.connectTimeout = 30_000
+        connection.readTimeout = 180_000
+        connection.doOutput = true
+        connection.setRequestProperty(
+            "Content-Type",
+            "application/json; charset=utf-8"
+        )
+
+        connection.outputStream.use {
+            it.write(
+                body.toString().toByteArray(
+                    Charsets.UTF_8
+                )
+            )
+        }
+
+        val code = connection.responseCode
+        val stream = if (code in 200..299) {
+            connection.inputStream
+        } else {
+            connection.errorStream
+        }
+
+        val responseText = stream?.bufferedReader()?.use {
+            it.readText()
+        }.orEmpty()
+
+        if (responseText.isBlank()) {
+            throw IllegalStateException(
+                "Servidor respondeu sem conteúdo. HTTP $code."
+            )
+        }
+
+        return JSONObject(responseText)
+    } finally {
+        connection.disconnect()
+    }
+}
+
+private fun abrirVideo(
+    context: Context,
+    videoUrl: String
+) {
+    val intent = Intent(
+        Intent.ACTION_VIEW,
+        Uri.parse(videoUrl)
+    ).apply {
+        setDataAndType(
+            Uri.parse(videoUrl),
+            "video/mp4"
+        )
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    context.startActivity(intent)
 }
