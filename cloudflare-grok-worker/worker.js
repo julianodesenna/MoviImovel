@@ -146,8 +146,12 @@ async function runPVideo({
     throw new Error("CLOUDFLARE_AI_GATEWAY_TOKEN não está configurado no Worker.")
   }
 
-  const accountId = "4bb14"
+  const accountId = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim()
   const gatewayName = "default"
+
+  if (!accountId) {
+    throw new Error("CLOUDFLARE_ACCOUNT_ID não está configurado no Worker.")
+  }
 
   const response = await fetch(
     `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayName}/replicate/v1/predictions`,
@@ -155,11 +159,12 @@ async function runPVideo({
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Prefer": "wait",
         "Authorization": `Bearer ${env.REPLICATE_API_TOKEN}`,
         "cf-aig-authorization": `Bearer ${env.CLOUDFLARE_AI_GATEWAY_TOKEN}`
       },
       body: JSON.stringify({
-        version: "pruna/p-video",
+        version: "prunaai/p-video",
         input: {
           prompt,
           image: imageUrl,
