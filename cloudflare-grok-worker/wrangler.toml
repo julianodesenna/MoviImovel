@@ -1,6 +1,7 @@
 name = "moviimovel-grok-worker"
 main = "worker.js"
 compatibility_date = "2026-06-24"
+keep_vars = true
 
 [ai]
 binding = "AI"
