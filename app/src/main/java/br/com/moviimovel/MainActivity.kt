@@ -34,9 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,8 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -73,27 +71,37 @@ fun MoviImovelApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var fotoSelecionada by remember { mutableStateOf<Bitmap?>(null) }
-    var depthResult by remember { mutableStateOf<DepthResult?>(null) }
-    var imagemRenderizada by remember { mutableStateOf<Bitmap?>(null) }
+    var fotoSelecionada by remember {
+        mutableStateOf<Bitmap?>(null)
+    }
 
-    var mostrandoMapa by remember { mutableStateOf(false) }
-    var mostrandoMovimento by remember { mutableStateOf(false) }
-    var processandoMapa by remember { mutableStateOf(false) }
+    var depthResult by remember {
+        mutableStateOf<DepthResult?>(null)
+    }
 
-    var movimentoAtual by remember {
-        mutableStateOf("Entrada 3D")
+    var mostrandoMapa by remember {
+        mutableStateOf(false)
+    }
+
+    var movimentoNitidoAtivo by remember {
+        mutableStateOf(false)
+    }
+
+    var processandoMapa by remember {
+        mutableStateOf(false)
     }
 
     var mensagem by remember {
-        mutableStateOf("Selecione uma foto e gere o mapa 3D.")
+        mutableStateOf(
+            "Selecione uma foto. Este teste preserva a qualidade original."
+        )
     }
 
     val seletorFoto = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            val bitmapCarregado = carregarBitmapSoftware(
+            val bitmapCarregado = carregarBitmapAltaQualidade(
                 context = context,
                 uriTexto = uri.toString()
             )
@@ -101,10 +109,11 @@ fun MoviImovelApp() {
             if (bitmapCarregado != null) {
                 fotoSelecionada = bitmapCarregado
                 depthResult = null
-                imagemRenderizada = null
                 mostrandoMapa = false
-                mostrandoMovimento = false
-                mensagem = "Foto carregada. Gere o mapa de profundidade."
+                movimentoNitidoAtivo = false
+
+                mensagem =
+                    "Foto carregada em alta qualidade. Teste o movimento nítido."
             } else {
                 mensagem = "Não foi possível carregar essa foto."
             }
@@ -112,75 +121,21 @@ fun MoviImovelApp() {
     }
 
     val transition = rememberInfiniteTransition(
-        label = "movimento_3d"
+        label = "movimento_local_nitido"
     )
 
-    val progressoBruto by transition.animateFloat(
+    val progressoMovimento by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(
-                durationMillis = 6500,
+                durationMillis = 7000,
                 easing = FastOutSlowInEasing
             ),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "progresso_3d"
+        label = "camera_suave"
     )
-
-    /*
-     * Menos quadros calculados:
-     * preserva o celular e evita renderização excessiva.
-     */
-    val etapaMovimento = (progressoBruto * 18f).toInt()
-
-    var larguraPreview by remember {
-        mutableIntStateOf(1)
-    }
-
-    var alturaPreview by remember {
-        mutableIntStateOf(1)
-    }
-
-    val renderer = remember {
-        DepthParallaxRenderer()
-    }
-
-    LaunchedEffect(
-        fotoSelecionada,
-        depthResult,
-        mostrandoMovimento,
-        movimentoAtual,
-        etapaMovimento,
-        larguraPreview,
-        alturaPreview
-    ) {
-        val foto = fotoSelecionada
-        val depth = depthResult
-
-        if (
-            foto != null &&
-            depth != null &&
-            mostrandoMovimento &&
-            larguraPreview > 1 &&
-            alturaPreview > 1
-        ) {
-            val progresso = etapaMovimento / 18f
-
-            val resultado = withContext(Dispatchers.Default) {
-                renderer.renderizar(
-                    bitmapOriginal = foto,
-                    depthResult = depth,
-                    modo = movimentoAtual,
-                    progresso = progresso,
-                    larguraSaida = larguraPreview,
-                    alturaSaida = alturaPreview
-                )
-            }
-
-            imagemRenderizada = resultado
-        }
-    }
 
     MaterialTheme {
         Surface(
@@ -201,29 +156,26 @@ fun MoviImovelApp() {
                 )
 
                 Text(
-                    text = "Parallax 3D por profundidade real",
+                    text = "Teste local de qualidade máxima",
                     color = Color(0xFFB8C2C8),
                     fontSize = 15.sp
                 )
 
-                PreviewImagem(
+                PreviewImagemAltaQualidade(
                     bitmap = when {
                         mostrandoMapa -> depthResult?.visualMap
-                        mostrandoMovimento -> imagemRenderizada
                         else -> fotoSelecionada
                     },
                     titulo = when {
                         mostrandoMapa -> "Mapa de profundidade"
-                        mostrandoMovimento -> movimentoAtual
+                        movimentoNitidoAtivo -> "Movimento local nítido"
                         else -> "Foto original"
                     },
+                    movimentoAtivo = movimentoNitidoAtivo && !mostrandoMapa,
+                    progresso = progressoMovimento,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(360.dp)
-                        .onSizeChanged {
-                            larguraPreview = it.width
-                            alturaPreview = it.height
-                        }
                 )
 
                 Button(
@@ -255,7 +207,7 @@ fun MoviImovelApp() {
                         val foto = fotoSelecionada ?: return@Button
 
                         processandoMapa = true
-                        mostrandoMovimento = false
+                        movimentoNitidoAtivo = false
                         mensagem = "Criando mapa de profundidade real..."
 
                         scope.launch(Dispatchers.Default) {
@@ -267,7 +219,9 @@ fun MoviImovelApp() {
                                     depthResult = resultado
                                     mostrandoMapa = true
                                     processandoMapa = false
-                                    mensagem = "Mapa pronto. Agora teste o movimento 3D."
+
+                                    mensagem =
+                                        "Mapa pronto. A foto original continua preservada."
                                 }
                             } catch (erro: Exception) {
                                 withContext(Dispatchers.Main) {
@@ -280,7 +234,7 @@ fun MoviImovelApp() {
                     enabled = fotoSelecionada != null && !processandoMapa,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp),
+                        .height(52.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF315D89),
                         disabledContainerColor = Color(0xFF2A363F)
@@ -294,30 +248,6 @@ fun MoviImovelApp() {
                             "Gerar mapa de profundidade"
                         },
                         color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        mostrandoMapa = false
-                        mostrandoMovimento = true
-                        mensagem = "Movimento com profundidade ativado."
-                    },
-                    enabled = depthResult != null && !processandoMapa,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF6B3D9A),
-                        disabledContainerColor = Color(0xFF30253B)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = "Testar movimento 3D",
-                        color = Color.White,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -325,37 +255,51 @@ fun MoviImovelApp() {
 
                 Button(
                     onClick = {
-                        movimentoAtual = when (movimentoAtual) {
-                            "Entrada 3D" -> "Pan Profundo"
-                            "Pan Profundo" -> "Diagonal 3D"
-                            else -> "Entrada 3D"
-                        }
-
                         mostrandoMapa = false
-                        mostrandoMovimento = true
+                        movimentoNitidoAtivo = !movimentoNitidoAtivo
+
+                        mensagem = if (movimentoNitidoAtivo) {
+                            "Movimento ativado: foto original sem reconstrução de pixels."
+                        } else {
+                            "Movimento pausado. Foto original parada."
+                        }
                     },
-                    enabled = depthResult != null && !processandoMapa,
+                    enabled = fotoSelecionada != null && !processandoMapa,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(54.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF28343A),
-                        disabledContainerColor = Color(0xFF20282E)
+                        containerColor = if (movimentoNitidoAtivo) {
+                            Color(0xFF7C3030)
+                        } else {
+                            Color(0xFF6B3D9A)
+                        },
+                        disabledContainerColor = Color(0xFF30253B)
                     ),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(14.dp)
                 ) {
                     Text(
-                        text = "Trocar movimento: $movimentoAtual",
+                        text = if (movimentoNitidoAtivo) {
+                            "Parar movimento nítido"
+                        } else {
+                            "Testar movimento nítido"
+                        },
                         color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
                 Button(
                     onClick = {
-                        mostrandoMovimento = false
+                        movimentoNitidoAtivo = false
                         mostrandoMapa = !mostrandoMapa
+
+                        mensagem = if (mostrandoMapa) {
+                            "Mapa de profundidade exibido."
+                        } else {
+                            "Foto original exibida."
+                        }
                     },
                     enabled = depthResult != null && !processandoMapa,
                     modifier = Modifier
@@ -392,9 +336,11 @@ fun MoviImovelApp() {
 }
 
 @Composable
-fun PreviewImagem(
+fun PreviewImagemAltaQualidade(
     bitmap: Bitmap?,
     titulo: String,
+    movimentoAtivo: Boolean,
+    progresso: Float,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -412,11 +358,43 @@ fun PreviewImagem(
             contentAlignment = Alignment.Center
         ) {
             if (bitmap != null) {
+                val deslocamentoNormalizado = progresso - 0.5f
+
+                /*
+                 * Movimento propositalmente muito curto.
+                 * A imagem não é recriada em Bitmap novo.
+                 * O Android movimenta a própria foto original.
+                 */
+                val escala = if (movimentoAtivo) {
+                    1.035f + (progresso * 0.010f)
+                } else {
+                    1f
+                }
+
+                val deslocamentoX = if (movimentoAtivo) {
+                    deslocamentoNormalizado * 18f
+                } else {
+                    0f
+                }
+
+                val deslocamentoY = if (movimentoAtivo) {
+                    deslocamentoNormalizado * -10f
+                } else {
+                    0f
+                }
+
                 Image(
                     bitmap = bitmap.asImageBitmap(),
                     contentDescription = titulo,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = escala
+                            scaleY = escala
+                            translationX = deslocamentoX
+                            translationY = deslocamentoY
+                        }
                 )
             } else {
                 Text(
@@ -449,7 +427,7 @@ fun PreviewImagem(
     }
 }
 
-private fun carregarBitmapSoftware(
+private fun carregarBitmapAltaQualidade(
     context: Context,
     uriTexto: String
 ): Bitmap? {
@@ -465,12 +443,16 @@ private fun carregarBitmapSoftware(
             ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
 
+                /*
+                 * Antes o limite era 2400.
+                 * Agora preservamos até 4096 px no maior lado.
+                 */
                 val maiorLado = maxOf(
                     info.size.width,
                     info.size.height
                 )
 
-                val limite = 2400
+                val limite = 4096
 
                 if (maiorLado > limite) {
                     val proporcao = limite.toFloat() / maiorLado.toFloat()
