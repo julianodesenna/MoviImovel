@@ -3,8 +3,8 @@ function json(data, status = 200) {
 }
 
 function toNumber(value, fallback = 0) {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
+  const number = Number(value)
+  return Number.isFinite(number) ? number : fallback
 }
 
 function roundUsd(value) {
@@ -100,6 +100,50 @@ function chooseAutoProvider(comparison) {
   return null
 }
 
+function createVideoKey(predictionId) {
+  const now = new Date()
+  const year = now.getUTCFullYear()
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(now.getUTCDate()).padStart(2, "0")
+  const safePredictionId = String(predictionId || crypto.randomUUID())
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+
+  return `pvideo/${year}-${month}-${day}/${safePredictionId}-${crypto.randomUUID()}.mp4`
+}
+
+async function saveVideoToR2(env, temporaryVideoUrl, predictionId) {
+  if (!env.VIDEOS) {
+    throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
+  }
+
+  if (!temporaryVideoUrl) {
+    throw new Error("A P-Video terminou, mas não retornou a URL temporária do MP4.")
+  }
+
+  const download = await fetch(temporaryVideoUrl)
+
+  if (!download.ok || !download.body) {
+    throw new Error(
+      `Não foi possível copiar o MP4 temporário para o R2. HTTP ${download.status}.`
+    )
+  }
+
+  const key = createVideoKey(predictionId)
+  const contentType = download.headers.get("content-type") || "video/mp4"
+
+  await env.VIDEOS.put(key, download.body, {
+    httpMetadata: {
+      contentType
+    },
+    customMetadata: {
+      provider: "pvideo",
+      predictionId: String(predictionId || "")
+    }
+  })
+
+  return key
+}
+
 async function runGrok({
   env,
   imageUrl,
@@ -123,6 +167,7 @@ async function runGrok({
 
   return {
     state: result?.state || null,
+    predictionId: null,
     videoUrl: result?.result?.video || null,
     raw: result
   }
@@ -130,6 +175,7 @@ async function runGrok({
 
 async function runPVideo({
   env,
+  workerOrigin,
   imageUrl,
   prompt,
   duration,
@@ -189,14 +235,31 @@ async function runPVideo({
     )
   }
 
-  const status = String(result?.status || "starting").toLowerCase()
+  const state = String(result?.status || "starting").toLowerCase()
+
+  const temporaryVideoUrl = Array.isArray(result?.output)
+    ? result.output[0] || null
+    : result?.output || null
+
+  let permanentVideoUrl = null
+  let savedR2Key = null
+
+  if (state === "succeeded" && temporaryVideoUrl) {
+    savedR2Key = await saveVideoToR2(
+      env,
+      temporaryVideoUrl,
+      result?.id
+    )
+
+    permanentVideoUrl = `${workerOrigin}/videos/${savedR2Key}`
+  }
 
   return {
-    state: status,
+    state,
     predictionId: result?.id || null,
-    videoUrl: Array.isArray(result?.output)
-      ? result.output[0] || null
-      : result?.output || null,
+    videoUrl: permanentVideoUrl,
+    temporaryVideoUrl,
+    savedR2Key,
     raw: result
   }
 }
@@ -204,6 +267,34 @@ async function runPVideo({
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+
+    if (
+      request.method === "GET" &&
+      url.pathname.startsWith("/videos/")
+    ) {
+      const key = decodeURIComponent(
+        url.pathname.slice("/videos/".length)
+      )
+
+      if (!key || key.includes("..")) {
+        return new Response("Vídeo inválido.", { status: 400 })
+      }
+
+      const object = await env.VIDEOS.get(key)
+
+      if (!object) {
+        return new Response("Vídeo não encontrado.", { status: 404 })
+      }
+
+      const headers = new Headers()
+      object.writeHttpMetadata(headers)
+      headers.set("Cache-Control", "public, max-age=31536000, immutable")
+      headers.set("Content-Disposition", "inline")
+
+      return new Response(object.body, {
+        headers
+      })
+    }
 
     if (request.method === "GET" && url.pathname === "/") {
       return json({
@@ -216,6 +307,7 @@ export default {
           "preview"
         ],
         uso: "POST /generate",
+        videosPermanentes: "GET /videos/{arquivo}",
         observacao: "preview usa P-Video draft; auto usa P-Video enquanto Grok aguarda ativação."
       })
     }
@@ -370,11 +462,12 @@ export default {
           aspectRatio
         })
       } else {
-        model = "pruna/p-video"
+        model = "prunaai/p-video"
         estimatedCostUsd = estimatePVideoCost(duration, resolution, draft)
 
         execution = await runPVideo({
           env,
+          workerOrigin: url.origin,
           imageUrl,
           prompt,
           duration,
@@ -397,6 +490,8 @@ export default {
         state: execution.state,
         predictionId: execution.predictionId || null,
         videoUrl: execution.videoUrl,
+        temporaryVideoUrl: execution.temporaryVideoUrl || null,
+        savedR2Key: execution.savedR2Key || null,
         raw: execution.raw
       })
     } catch (error) {

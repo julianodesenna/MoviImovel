@@ -10,3 +10,7 @@ binding = "AI"
 CLOUDFLARE_ACCOUNT_ID = "4bb140923d5cbe7d8c4bb04c514f44d6"
 GROK_480P_PER_SECOND = "0.08"
 GROK_720P_PER_SECOND = "0.14"
+
+[[r2_buckets]]
+binding = "VIDEOS"
+bucket_name = "moviimovel-videos"
