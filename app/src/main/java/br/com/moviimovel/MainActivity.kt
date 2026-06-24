@@ -35,6 +35,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -108,6 +109,10 @@ fun MoviImovelApp() {
 
     var duracaoVideo by remember {
         mutableStateOf(3)
+    }
+
+    var modoQualidade by remember {
+        mutableStateOf("Rascunho 720p")
     }
 
     var gerandoVideo by remember {
@@ -345,7 +350,16 @@ fun MoviImovelApp() {
                     label = {
                         Text("Você pode editar este texto")
                     },
-                    minLines = 8
+                    minLines = 8,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color(0xFFE1E8EC),
+                        focusedBorderColor = Color(0xFFFFA45B),
+                        unfocusedBorderColor = Color(0xFF74818A),
+                        focusedLabelColor = Color(0xFFFFC58B),
+                        unfocusedLabelColor = Color(0xFFBBC7CD),
+                        cursorColor = Color(0xFFFFA45B)
+                    )
                 )
 
                 Text(
@@ -395,6 +409,74 @@ fun MoviImovelApp() {
                     }
                 }
 
+
+                Text(
+                    text = "Qualidade",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        "Rascunho 720p",
+                        "Final 720p",
+                        "Final 1080p"
+                    ).chunked(2).forEach { linha ->
+                        androidx.compose.foundation.layout.Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            linha.forEach { qualidade ->
+                                Button(
+                                    onClick = {
+                                        modoQualidade = qualidade
+                                        mensagem = "Qualidade escolhida: $qualidade"
+                                    },
+                                    enabled = !gerandoVideo,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (
+                                            modoQualidade == qualidade
+                                        ) {
+                                            Color(0xFF6F4C9B)
+                                        } else {
+                                            Color(0xFF304D5B)
+                                        }
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        text = qualidade,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text(
+                    text = when (modoQualidade) {
+                        "Rascunho 720p" ->
+                            "Modo barato para testar. Pode ficar mais suave ou borrado."
+
+                        "Final 720p" ->
+                            "Mais estável que o rascunho, mantendo 720p."
+
+                        else ->
+                            "Maior qualidade disponível neste app. Mais caro que 720p."
+                    },
+                    color = Color(0xFFC6D0D6),
+                    fontSize = 13.sp
+                )
+
                 Button(
                     onClick = {
                         val foto = fotoSelecionada
@@ -415,10 +497,28 @@ fun MoviImovelApp() {
 
                         scope.launch(Dispatchers.IO) {
                             try {
+                                val provider = if (
+                                    modoQualidade == "Rascunho 720p"
+                                ) {
+                                    "preview"
+                                } else {
+                                    "pvideo"
+                                }
+
+                                val resolution = if (
+                                    modoQualidade == "Final 1080p"
+                                ) {
+                                    "1080p"
+                                } else {
+                                    "720p"
+                                }
+
                                 val videoUrl = gerarVideoPVideo(
                                     bitmap = foto,
                                     duracao = duracaoVideo,
-                                    prompt = promptVideo
+                                    prompt = promptVideo,
+                                    provider = provider,
+                                    resolution = resolution
                                 )
 
                                 withContext(Dispatchers.Main) {
@@ -530,139 +630,109 @@ fun MoviImovelApp() {
 }
 
 private fun listaMovimentosVideo(): List<MovimentoVideo> {
-    fun prompt(movimento: String): String {
+    fun prompt(
+        comandoPrincipal: String,
+        proibicoes: String
+    ): String {
         return """
-$movimento
+COMANDO PRINCIPAL DE CÂMERA:
+$comandoPrincipal
 
-Crie um vídeo curto e realista para apresentação imobiliária.
-Preserve rigorosamente paredes, piso, teto, portas, janelas, cortinas,
-móveis, iluminação, arquitetura, materiais e proporções originais.
+REGRA OBRIGATÓRIA:
+Execute somente esse movimento.
+$proibicoes
 
-Não adicionar pessoas, animais, objetos, reformas, mudanças estruturais,
-deformações, duplicações, textos ou qualquer elemento inexistente na foto.
-A câmera deve se mover de forma lenta, suave, profissional e estável.
+Mantenha o enquadramento inicial reconhecível.
+Não faça movimentos extras, não invente outro tipo de câmera
+e não transforme o movimento em aproximação automática.
+
+Crie um vídeo imobiliário realista.
+Preserve rigorosamente paredes, piso, teto, portas, janelas,
+cortinas, pia, fogão, móveis, iluminação, arquitetura,
+materiais e proporções originais.
+
+Não adicionar pessoas, silhuetas humanas, animais, objetos,
+móveis, reformas, deformações, duplicações, textos,
+movimentos de pessoas ou elementos inexistentes.
         """.trimIndent()
     }
 
     return listOf(
         MovimentoVideo(
-            "Aproximação frontal suave",
-            prompt(
-                "A câmera faz uma aproximação frontal muito leve e centralizada."
-            )
-        ),
-        MovimentoVideo(
-            "Afastamento suave",
-            prompt(
-                "A câmera se afasta lentamente do ambiente, ampliando a visão."
-            )
-        ),
-        MovimentoVideo(
             "Pan da esquerda para a direita",
             prompt(
-                "A câmera desliza lateralmente da esquerda para a direita."
+                "Deslize a câmera horizontalmente da esquerda para a direita, em linha reta e lentamente.",
+                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO suba, NÃO desça e NÃO faça diagonal."
             )
         ),
         MovimentoVideo(
             "Pan da direita para a esquerda",
             prompt(
-                "A câmera desliza lateralmente da direita para a esquerda."
+                "Deslize a câmera horizontalmente da direita para a esquerda, em linha reta e lentamente.",
+                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO suba, NÃO desça e NÃO faça diagonal."
+            )
+        ),
+        MovimentoVideo(
+            "Aproximação frontal suave",
+            prompt(
+                "Aproxime a câmera lentamente para frente, mantendo o centro do ambiente como referência.",
+                "NÃO faça pan lateral. NÃO suba. NÃO desça. NÃO faça órbita ou diagonal."
+            )
+        ),
+        MovimentoVideo(
+            "Afastamento suave",
+            prompt(
+                "Afaste a câmera lentamente para trás, revelando um pouco mais do ambiente.",
+                "NÃO faça pan lateral. NÃO aproxime. NÃO suba. NÃO desça. NÃO faça diagonal."
             )
         ),
         MovimentoVideo(
             "Zoom leve para dentro",
             prompt(
-                "A câmera faz um zoom muito leve para dentro, sem deformar o ambiente."
+                "Faça somente zoom óptico leve para dentro, sem deslocar a posição da câmera.",
+                "NÃO faça pan. NÃO faça dolly para frente. NÃO mova verticalmente. NÃO altere o enquadramento."
             )
         ),
         MovimentoVideo(
             "Zoom leve para fora",
             prompt(
-                "A câmera faz um zoom muito leve para fora, revelando mais do ambiente."
+                "Faça somente zoom óptico leve para fora, sem deslocar a posição da câmera.",
+                "NÃO faça pan. NÃO afaste a câmera fisicamente. NÃO mova verticalmente. NÃO altere o enquadramento."
             )
         ),
         MovimentoVideo(
             "Subida suave",
             prompt(
-                "A câmera sobe lentamente, mantendo o ambiente estável."
+                "Mova a câmera verticalmente para cima de forma lenta e pequena.",
+                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO deslize lateralmente."
             )
         ),
         MovimentoVideo(
             "Descida suave",
             prompt(
-                "A câmera desce lentamente, mantendo o ambiente estável."
+                "Mova a câmera verticalmente para baixo de forma lenta e pequena.",
+                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO deslize lateralmente."
             )
         ),
         MovimentoVideo(
-            "Diagonal para cima à direita",
+            "Diagonal superior direita",
             prompt(
-                "A câmera faz um deslocamento diagonal suave para cima e para a direita."
+                "Desloque a câmera suavemente na diagonal para cima e para a direita.",
+                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO transforme em pan horizontal puro."
             )
         ),
         MovimentoVideo(
-            "Diagonal para cima à esquerda",
+            "Diagonal superior esquerda",
             prompt(
-                "A câmera faz um deslocamento diagonal suave para cima e para a esquerda."
+                "Desloque a câmera suavemente na diagonal para cima e para a esquerda.",
+                "NÃO faça zoom. NÃO aproxime. NÃO afaste. NÃO transforme em pan horizontal puro."
             )
         ),
         MovimentoVideo(
-            "Diagonal para baixo à direita",
+            "Câmera quase parada",
             prompt(
-                "A câmera faz um deslocamento diagonal suave para baixo e para a direita."
-            )
-        ),
-        MovimentoVideo(
-            "Diagonal para baixo à esquerda",
-            prompt(
-                "A câmera faz um deslocamento diagonal suave para baixo e para a esquerda."
-            )
-        ),
-        MovimentoVideo(
-            "Órbita leve para a direita",
-            prompt(
-                "A câmera faz uma órbita muito leve para a direita, sem alterar a geometria."
-            )
-        ),
-        MovimentoVideo(
-            "Órbita leve para a esquerda",
-            prompt(
-                "A câmera faz uma órbita muito leve para a esquerda, sem alterar a geometria."
-            )
-        ),
-        MovimentoVideo(
-            "Entrada pela porta",
-            prompt(
-                "A câmera avança suavemente como se estivesse entrando pelo acesso principal."
-            )
-        ),
-        MovimentoVideo(
-            "Aproximação da janela",
-            prompt(
-                "A câmera se aproxima suavemente da janela, valorizando luz e profundidade."
-            )
-        ),
-        MovimentoVideo(
-            "Aproximação da varanda",
-            prompt(
-                "A câmera se aproxima suavemente da varanda ou abertura externa."
-            )
-        ),
-        MovimentoVideo(
-            "Revelação panorâmica",
-            prompt(
-                "A câmera faz uma revelação panorâmica lenta, mostrando o ambiente por completo."
-            )
-        ),
-        MovimentoVideo(
-            "Câmera estável com profundidade discreta",
-            prompt(
-                "A câmera permanece quase estável, com profundidade visual muito discreta."
-            )
-        ),
-        MovimentoVideo(
-            "Movimento imobiliário cinematográfico",
-            prompt(
-                "A câmera executa um movimento cinematográfico leve, elegante e natural."
+                "Mantenha a câmera praticamente parada, com apenas profundidade visual muito discreta.",
+                "NÃO faça zoom perceptível. NÃO faça pan. NÃO aproxime. NÃO afaste. NÃO altere objetos."
             )
         )
     )
@@ -671,7 +741,9 @@ A câmera deve se mover de forma lenta, suave, profissional e estável.
 private fun gerarVideoPVideo(
     bitmap: Bitmap,
     duracao: Int,
-    prompt: String
+    prompt: String,
+    provider: String,
+    resolution: String
 ): String {
     val imagemBase64 = prepararImagemParaVideo(bitmap)
 
@@ -699,11 +771,11 @@ private fun gerarVideoPVideo(
     val gerarResposta = postJson(
         endpoint = "$MOVIIMOVEL_VIDEO_WORKER/generate",
         body = JSONObject()
-            .put("provider", "preview")
+            .put("provider", provider)
             .put("imageUrl", imageUrl)
             .put("prompt", prompt)
             .put("duration", duracao)
-            .put("resolution", "720p")
+            .put("resolution", resolution)
             .put("aspectRatio", "16:9")
             .put("fps", 24)
     )
@@ -727,7 +799,7 @@ private fun gerarVideoPVideo(
 
 private fun prepararImagemParaVideo(bitmap: Bitmap): String {
     val maiorLado = maxOf(bitmap.width, bitmap.height)
-    val limite = 1920
+    val limite = 2560
 
     val imagemFinal = if (maiorLado > limite) {
         val proporcao = limite.toFloat() / maiorLado.toFloat()
@@ -746,7 +818,7 @@ private fun prepararImagemParaVideo(bitmap: Bitmap): String {
 
     imagemFinal.compress(
         Bitmap.CompressFormat.JPEG,
-        84,
+        92,
         output
     )
 
