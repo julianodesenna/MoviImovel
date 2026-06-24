@@ -16,140 +16,98 @@ function getGrokPricePerSecond(env, resolution) {
     ? "GROK_720P_PER_SECOND"
     : "GROK_480P_PER_SECOND"
 
-  const raw = env[key]
-  const num = Number(raw)
-  return Number.isFinite(num) && num > 0 ? num : null
+  const value = Number(env[key])
+  return Number.isFinite(value) && value > 0 ? value : null
 }
 
 function estimatePVideoCost(duration, resolution, draft) {
-  const table = draft
+  const prices = draft
     ? {
         "720p": 0.005,
-        "1080p": 0.010
+        "1080p": 0.01
       }
     : {
-        "720p": 0.020,
-        "1080p": 0.040
+        "720p": 0.02,
+        "1080p": 0.04
       }
 
-  const perSecond = table[resolution]
-  if (!perSecond) return null
-  return roundUsd(duration * perSecond)
+  const perSecond = prices[resolution]
+  return perSecond ? roundUsd(duration * perSecond) : null
 }
 
 function estimateGrokCost(env, duration, resolution) {
   const perSecond = getGrokPricePerSecond(env, resolution)
-  if (!perSecond) return null
-  return roundUsd(duration * perSecond)
+  return perSecond ? roundUsd(duration * perSecond) : null
 }
 
 function supportsGrok(duration, resolution) {
-  return Number.isInteger(duration) &&
+  return (
+    Number.isInteger(duration) &&
     duration >= 1 &&
     duration <= 15 &&
     ["480p", "720p"].includes(resolution)
+  )
 }
 
 function supportsPVideo(duration, resolution, fps) {
-  return Number.isInteger(duration) &&
+  return (
+    Number.isInteger(duration) &&
     duration >= 1 &&
     duration <= 20 &&
     ["720p", "1080p"].includes(resolution) &&
     [24, 48].includes(fps)
+  )
 }
 
 function buildComparison(env, duration, resolution, fps) {
   const grokSupported = supportsGrok(duration, resolution)
   const pvideoSupported = supportsPVideo(duration, resolution, fps)
 
-  const grokEstimate = grokSupported
-    ? estimateGrokCost(env, duration, resolution)
-    : null
-
-  const pvideoFinalEstimate = pvideoSupported
-    ? estimatePVideoCost(duration, resolution, false)
-    : null
-
-  const pvideoPreviewEstimate = pvideoSupported
-    ? estimatePVideoCost(duration, resolution, true)
-    : null
-
   return {
     grok: {
       supported: grokSupported,
-      estimatedCostUsd: grokEstimate,
-      priceConfigured: grokEstimate !== null
+      estimatedCostUsd: grokSupported
+        ? estimateGrokCost(env, duration, resolution)
+        : null
     },
     pvideo: {
       supported: pvideoSupported,
-      estimatedCostUsd: pvideoFinalEstimate,
-      draftEstimatedCostUsd: pvideoPreviewEstimate
+      estimatedCostUsd: pvideoSupported
+        ? estimatePVideoCost(duration, resolution, false)
+        : null,
+      draftEstimatedCostUsd: pvideoSupported
+        ? estimatePVideoCost(duration, resolution, true)
+        : null
     }
   }
 }
 
 function chooseAutoProvider(comparison) {
-  const grokReady =
-    comparison.grok.supported &&
-    comparison.grok.priceConfigured &&
-    comparison.grok.estimatedCostUsd !== null
-
-  const pvideoReady =
-    comparison.pvideo.supported &&
-    comparison.pvideo.estimatedCostUsd !== null
-
-  if (grokReady && pvideoReady) {
-    if (comparison.grok.estimatedCostUsd <= comparison.pvideo.estimatedCostUsd) {
-      return {
-        provider: "grok",
-        reason: "Grok ficou igual ou mais barato que P-Video na comparação automática.",
-        comparisonMode: "complete"
-      }
-    }
-
-    return {
-      provider: "pvideo",
-      reason: "P-Video ficou mais barato que Grok na comparação automática.",
-      comparisonMode: "complete"
-    }
-  }
-
-  if (pvideoReady && !grokReady) {
-    return {
-      provider: "pvideo",
-      reason: "Preço do Grok ainda não foi configurado; P-Video foi escolhido como opção com custo conhecido.",
-      comparisonMode: "partial"
-    }
-  }
-
-  if (grokReady && !pvideoReady) {
-    return {
-      provider: "grok",
-      reason: "P-Video não atende esta combinação; Grok foi escolhido.",
-      comparisonMode: "partial"
-    }
-  }
-
   if (comparison.pvideo.supported) {
     return {
       provider: "pvideo",
-      reason: "Somente P-Video atende esta combinação de resolução/duração/fps.",
-      comparisonMode: "fallback"
+      reason: "P-Video foi escolhido como opção final mais barata disponível."
     }
   }
 
   if (comparison.grok.supported) {
     return {
       provider: "grok",
-      reason: "Somente Grok atende esta combinação de resolução/duração.",
-      comparisonMode: "fallback"
+      reason: "P-Video não atende esta configuração; Grok foi escolhido."
     }
   }
 
   return null
 }
 
-async function runGrok({ env, imageUrl, prompt, duration, resolution, aspectRatio }) {
+async function runGrok({
+  env,
+  imageUrl,
+  prompt,
+  duration,
+  resolution,
+  aspectRatio
+}) {
   const result = await env.AI.run(
     "xai/grok-imagine-video-1.5-preview",
     {
@@ -164,9 +122,9 @@ async function runGrok({ env, imageUrl, prompt, duration, resolution, aspectRati
   )
 
   return {
-    raw: result,
+    state: result?.state || null,
     videoUrl: result?.result?.video || null,
-    state: result?.state || null
+    raw: result
   }
 }
 
@@ -180,23 +138,61 @@ async function runPVideo({
   fps,
   draft
 }) {
-  const result = await env.AI.run(
-    "pruna/p-video",
+  if (!env.REPLICATE_API_TOKEN) {
+    throw new Error("REPLICATE_API_TOKEN não está configurado no Worker.")
+  }
+
+  if (!env.CLOUDFLARE_AI_GATEWAY_TOKEN) {
+    throw new Error("CLOUDFLARE_AI_GATEWAY_TOKEN não está configurado no Worker.")
+  }
+
+  const accountId = "4bb14"
+  const gatewayName = "default"
+
+  const response = await fetch(
+    `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayName}/replicate/v1/predictions`,
     {
-      prompt,
-      image: imageUrl,
-      duration,
-      resolution,
-      fps,
-      aspect_ratio: aspectRatio,
-      draft
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${env.REPLICATE_API_TOKEN}`,
+        "cf-aig-authorization": `Bearer ${env.CLOUDFLARE_AI_GATEWAY_TOKEN}`
+      },
+      body: JSON.stringify({
+        version: "pruna/p-video",
+        input: {
+          prompt,
+          image: imageUrl,
+          duration,
+          resolution,
+          fps,
+          aspect_ratio: aspectRatio,
+          draft
+        }
+      })
     }
   )
 
+  const result = await response.json()
+
+  if (!response.ok) {
+    throw new Error(
+      result?.detail ||
+      result?.error ||
+      result?.message ||
+      `P-Video retornou HTTP ${response.status}.`
+    )
+  }
+
+  const status = String(result?.status || "starting").toLowerCase()
+
   return {
-    raw: result,
-    videoUrl: result?.video || null,
-    state: "completed"
+    state: status,
+    predictionId: result?.id || null,
+    videoUrl: Array.isArray(result?.output)
+      ? result.output[0] || null
+      : result?.output || null,
+    raw: result
   }
 }
 
@@ -215,7 +211,7 @@ export default {
           "preview"
         ],
         uso: "POST /generate",
-        observacao: "auto escolhe o vídeo final mais barato; preview usa P-Video draft."
+        observacao: "preview usa P-Video draft; auto usa P-Video enquanto Grok aguarda ativação."
       })
     }
 
@@ -298,14 +294,13 @@ export default {
       let chosenProvider = provider
       let draft = false
       let autoReason = null
-      let comparisonMode = null
 
       if (provider === "preview") {
         if (!comparison.pvideo.supported) {
           return json(
             {
               ok: false,
-              error: "preview usa P-Video draft e exige resolução 720p ou 1080p, duração 1-20 e fps 24 ou 48."
+              error: "preview exige P-Video: 720p/1080p, 1-20 segundos e fps 24/48."
             },
             400
           )
@@ -316,29 +311,28 @@ export default {
       }
 
       if (provider === "auto") {
-        const autoChoice = chooseAutoProvider(comparison)
+        const choice = chooseAutoProvider(comparison)
 
-        if (!autoChoice) {
+        if (!choice) {
           return json(
             {
               ok: false,
-              error: "Nenhum provedor atende esta combinação de duração, resolução e fps.",
+              error: "Nenhum provedor atende essa configuração.",
               comparison
             },
             400
           )
         }
 
-        chosenProvider = autoChoice.provider
-        autoReason = autoChoice.reason
-        comparisonMode = autoChoice.comparisonMode
+        chosenProvider = choice.provider
+        autoReason = choice.reason
       }
 
       if (provider === "grok" && !comparison.grok.supported) {
         return json(
           {
             ok: false,
-            error: "Grok aceita apenas duração de 1 a 15 segundos e resolução 480p ou 720p."
+            error: "Grok aceita apenas 1-15 segundos em 480p ou 720p."
           },
           400
         )
@@ -348,19 +342,20 @@ export default {
         return json(
           {
             ok: false,
-            error: "P-Video aceita duração de 1 a 20 segundos, resolução 720p ou 1080p e fps 24 ou 48."
+            error: "P-Video aceita 1-20 segundos em 720p/1080p e fps 24/48."
           },
           400
         )
       }
 
       let execution
-      let estimatedCostUsd = null
-      let model = null
+      let model
+      let estimatedCostUsd
 
       if (chosenProvider === "grok") {
         model = "xai/grok-imagine-video-1.5-preview"
         estimatedCostUsd = comparison.grok.estimatedCostUsd
+
         execution = await runGrok({
           env,
           imageUrl,
@@ -372,6 +367,7 @@ export default {
       } else {
         model = "pruna/p-video"
         estimatedCostUsd = estimatePVideoCost(duration, resolution, draft)
+
         execution = await runPVideo({
           env,
           imageUrl,
@@ -392,9 +388,9 @@ export default {
         mode: draft ? "draft" : "final",
         estimatedCostUsd,
         autoReason,
-        comparisonMode,
         comparison,
         state: execution.state,
+        predictionId: execution.predictionId || null,
         videoUrl: execution.videoUrl,
         raw: execution.raw
       })
