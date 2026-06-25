@@ -40,12 +40,14 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +65,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -130,6 +133,22 @@ fun MoviImovelApp() {
         mutableStateOf(false)
     }
 
+    var cenaAtualGeracao by remember {
+        mutableStateOf(0)
+    }
+
+    var progressoGeralReal by remember {
+        mutableStateOf(0)
+    }
+
+    var inicioGeracaoMillis by remember {
+        mutableStateOf<Long?>(null)
+    }
+
+    var segundosDecorridos by remember {
+        mutableStateOf(0L)
+    }
+
     var ultimoVideoUri by remember {
         mutableStateOf<Uri?>(null)
     }
@@ -140,12 +159,36 @@ fun MoviImovelApp() {
         )
     }
 
+    var mostrarProgressoDownload by remember {
+        mutableStateOf(false)
+    }
+
+    var bytesBaixados by remember {
+        mutableStateOf(0L)
+    }
+
+    var bytesTotais by remember {
+        mutableStateOf(-1L)
+    }
+
+    var cenaDownloadAtual by remember {
+        mutableStateOf("")
+    }
+
     var cenaParaMovimentoId by remember {
         mutableStateOf<Long?>(null)
     }
 
     var confirmarGeracao by remember {
         mutableStateOf(false)
+    }
+
+    LaunchedEffect(gerandoVideo, inicioGeracaoMillis) {
+        while (gerandoVideo && inicioGeracaoMillis != null) {
+            segundosDecorridos =
+                (System.currentTimeMillis() - inicioGeracaoMillis!!) / 1000L
+            delay(1000)
+        }
     }
 
     val seletorFotos = rememberLauncherForActivityResult(
@@ -311,6 +354,10 @@ fun MoviImovelApp() {
                         confirmarGeracao = false
                         gerandoVideo = true
                         ultimoVideoUri = null
+                        cenaAtualGeracao = 0
+                        progressoGeralReal = 0
+                        segundosDecorridos = 0
+                        inicioGeracaoMillis = System.currentTimeMillis()
 
                         scope.launch(Dispatchers.IO) {
                             val temporarios = mutableListOf<File>()
@@ -332,8 +379,9 @@ fun MoviImovelApp() {
 
                                 cenas.forEachIndexed { index, cena ->
                                     withContext(Dispatchers.Main) {
+                                        cenaAtualGeracao = index + 1
                                         mensagem =
-                                            "Gerando cena ${index + 1} de ${cenas.size}: ${cena.nome}."
+                                            "Vídeo ${index + 1} de ${cenas.size}: preparando ${cena.nome}."
                                     }
 
                                     val bitmap =
@@ -351,7 +399,14 @@ fun MoviImovelApp() {
                                             duracao = cena.duracao,
                                             prompt = cena.prompt,
                                             provider = provider,
-                                            resolution = resolution
+                                            resolution = resolution,
+                                            aoAtualizarStatus = { status ->
+                                                scope.launch(Dispatchers.Main) {
+                                                    mensagem =
+                                                        "Vídeo ${index + 1} de ${cenas.size}: " +
+                                                            status
+                                                }
+                                            }
                                         )
 
                                     val arquivoCena = File(
@@ -359,15 +414,57 @@ fun MoviImovelApp() {
                                         "moviimovel_cena_${index}_${System.currentTimeMillis()}.mp4"
                                     )
 
+                                    withContext(Dispatchers.Main) {
+                                        mostrarProgressoDownload = true
+                                        bytesBaixados = 0L
+                                        bytesTotais = -1L
+                                        cenaDownloadAtual =
+                                            "Baixando vídeo ${index + 1} de ${cenas.size}"
+                                        mensagem =
+                                            "Vídeo ${index + 1} de ${cenas.size}: baixando arquivo..."
+                                    }
+
                                     baixarVideoTemporario(
-                                        videoUrl,
-                                        arquivoCena
-                                    )
+                                        videoUrl = videoUrl,
+                                        destino = arquivoCena
+                                    ) { recebidos, total ->
+                                        scope.launch(Dispatchers.Main) {
+                                            bytesBaixados = recebidos
+                                            bytesTotais = total
+
+                                            if (total > 0L) {
+                                                val percentual =
+                                                    ((recebidos * 100L) / total)
+                                                        .coerceIn(0L, 100L)
+
+                                                mensagem =
+                                                    "Vídeo ${index + 1} de ${cenas.size}: " +
+                                                        "baixando $percentual%."
+                                            } else {
+                                                mensagem =
+                                                    "Vídeo ${index + 1} de ${cenas.size}: " +
+                                                        "baixando arquivo..."
+                                            }
+                                        }
+                                    }
+
+                                    withContext(Dispatchers.Main) {
+                                        mostrarProgressoDownload = false
+                                    }
 
                                     temporarios += arquivoCena
+
+                                    withContext(Dispatchers.Main) {
+                                        progressoGeralReal =
+                                            ((index + 1) * 100) / cenas.size
+                                        mensagem =
+                                            "Vídeo ${index + 1} de ${cenas.size} concluído. " +
+                                                "Progresso geral real: $progressoGeralReal%."
+                                    }
                                 }
 
                                 withContext(Dispatchers.Main) {
+                                    mostrarProgressoDownload = false
                                     mensagem =
                                         "Montando o vídeo final no celular..."
                                 }
@@ -402,10 +499,12 @@ fun MoviImovelApp() {
                                 }
 
                                 withContext(Dispatchers.Main) {
+                                    mostrarProgressoDownload = false
                                     ultimoVideoUri = uriFinal
                                     mensagem =
                                         "Vídeo final salvo na Galeria em Movies/MoviImovel."
                                     gerandoVideo = false
+                                    inicioGeracaoMillis = null
                                 }
                             } catch (erro: Exception) {
                                 temporarios.forEach {
@@ -413,7 +512,9 @@ fun MoviImovelApp() {
                                 }
 
                                 withContext(Dispatchers.Main) {
+                                    mostrarProgressoDownload = false
                                     gerandoVideo = false
+                                    inicioGeracaoMillis = null
 
                                     mensagem =
                                         "Não foi possível concluir o vídeo: " +
@@ -449,6 +550,50 @@ fun MoviImovelApp() {
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
+
+                if (gerandoVideo) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF1C292F)
+                        ),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text(
+                                text = "PROGRESSO REAL DA GERAÇÃO",
+                                color = Color(0xFFF2D8AF),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+
+                            Text(
+                                text = "Vídeo $cenaAtualGeracao de ${cenas.size}",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Text(
+                                text = "Progresso geral real: $progressoGeralReal%",
+                                color = Color.White
+                            )
+
+                            Text(
+                                text = "Tempo decorrido: ${formatarTempoDecorrido(segundosDecorridos)}",
+                                color = Color(0xFFB8C7CE)
+                            )
+
+                            Text(
+                                text = "O status da IA aparece abaixo. A porcentagem só sobe quando cada vídeo termina.",
+                                color = Color(0xFFB8C7CE),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
 
                 Text(
                     text =
@@ -679,6 +824,66 @@ fun MoviImovelApp() {
                         color = Color.White,
                         fontWeight = FontWeight.SemiBold
                     )
+                }
+
+                if (mostrarProgressoDownload) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF243640)
+                        ),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = cenaDownloadAtual,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            if (bytesTotais > 0L) {
+                                val progresso =
+                                    (bytesBaixados.toFloat() /
+                                        bytesTotais.toFloat())
+                                        .coerceIn(0f, 1f)
+
+                                val percentual =
+                                    (progresso * 100f).toInt()
+
+                                LinearProgressIndicator(
+                                    progress = progresso,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Color(0xFFFFA45B),
+                                    trackColor = Color(0xFF4C6470)
+                                )
+
+                                Text(
+                                    text =
+                                        "$percentual% • " +
+                                            formatarBytes(bytesBaixados) +
+                                            " de " +
+                                            formatarBytes(bytesTotais),
+                                    color = Color(0xFFD9E6EB),
+                                    fontSize = 13.sp
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Color(0xFFFFA45B),
+                                    trackColor = Color(0xFF4C6470)
+                                )
+
+                                Text(
+                                    text = "Recebendo o vídeo...",
+                                    color = Color(0xFFD9E6EB),
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
                 }
 
                 Card(
@@ -1364,8 +1569,11 @@ private fun gerarVideoPVideo(
     duracao: Int,
     prompt: String,
     provider: String,
-    resolution: String
+    resolution: String,
+    aoAtualizarStatus: (String) -> Unit
 ): String {
+    aoAtualizarStatus("enviando imagem para a IA...")
+
     val imagemBase64 =
         prepararImagemParaVideo(bitmap)
 
@@ -1381,7 +1589,7 @@ private fun gerarVideoPVideo(
         throw IllegalStateException(
             uploadResposta.optString(
                 "error",
-                "Falha ao enviar foto."
+                "Falha ao enviar imagem."
             )
         )
     }
@@ -1394,6 +1602,8 @@ private fun gerarVideoPVideo(
             "O Worker não devolveu a URL da foto enviada."
         )
     }
+
+    aoAtualizarStatus("solicitando geração à IA...")
 
     val gerarResposta = postJson(
         endpoint =
@@ -1417,16 +1627,142 @@ private fun gerarVideoPVideo(
         )
     }
 
-    val videoUrl =
+    var state =
+        gerarResposta.optString("state", "starting")
+            .lowercase(Locale.ROOT)
+
+    var videoUrl =
         gerarResposta.optString("videoUrl")
 
-    if (videoUrl.isBlank()) {
+    val predictionId =
+        gerarResposta.optString("predictionId")
+
+    if (videoUrl.isNotBlank()) {
+        aoAtualizarStatus("vídeo pronto. Baixando arquivo...")
+        return videoUrl
+    }
+
+    if (predictionId.isBlank()) {
         throw IllegalStateException(
-            "O vídeo foi gerado, mas não foi devolvida uma URL permanente."
+            "A IA não devolveu o identificador da geração."
         )
     }
 
+    var tentativas = 0
+    val maxTentativas = 240
+
+    while (state !in listOf("succeeded", "failed", "canceled", "cancelled")) {
+        aoAtualizarStatus(
+            when (state) {
+                "starting" ->
+                    "IA iniciou a preparação..."
+                "processing" ->
+                    "gerando pela IA..."
+                else ->
+                    "status real da IA: $state"
+            }
+        )
+
+        Thread.sleep(3_000)
+        tentativas++
+
+        if (tentativas > maxTentativas) {
+            throw IllegalStateException(
+                "A IA demorou mais de 12 minutos para concluir."
+            )
+        }
+
+        val statusResposta = getJson(
+            "$MOVIIMOVEL_VIDEO_WORKER/prediction-status/" +
+                java.net.URLEncoder.encode(
+                    predictionId,
+                    "UTF-8"
+                )
+        )
+
+        if (!statusResposta.optBoolean("ok", false)) {
+            throw IllegalStateException(
+                statusResposta.optString(
+                    "error",
+                    "Não foi possível consultar o status da IA."
+                )
+            )
+        }
+
+        state =
+            statusResposta.optString("state", "starting")
+                .lowercase(Locale.ROOT)
+
+        videoUrl =
+            statusResposta.optString("videoUrl")
+    }
+
+    if (state != "succeeded") {
+        throw IllegalStateException(
+            "A IA terminou com status: $state."
+        )
+    }
+
+    if (videoUrl.isBlank()) {
+        throw IllegalStateException(
+            "A IA concluiu, mas o Worker não devolveu a URL permanente do vídeo."
+        )
+    }
+
+    aoAtualizarStatus("vídeo pronto. Baixando arquivo...")
     return videoUrl
+}
+
+private fun getJson(
+    endpoint: String
+): JSONObject {
+    val connection =
+        URL(endpoint).openConnection() as HttpURLConnection
+
+    try {
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 30_000
+        connection.readTimeout = 60_000
+        connection.instanceFollowRedirects = true
+
+        val responseCode = connection.responseCode
+
+        val stream =
+            if (responseCode in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream ?: connection.inputStream
+            }
+
+        val responseText =
+            stream.bufferedReader().use {
+                it.readText()
+            }
+
+        if (responseText.isBlank()) {
+            throw IllegalStateException(
+                "A consulta de status retornou resposta vazia. HTTP $responseCode."
+            )
+        }
+
+        return JSONObject(responseText)
+    } finally {
+        connection.disconnect()
+    }
+}
+
+private fun formatarTempoDecorrido(
+    segundos: Long
+): String {
+    val minutos = segundos / 60
+    val resto = segundos % 60
+
+    return String.format(
+        Locale.getDefault(),
+        "%02d:%02d",
+        minutos,
+        resto
+    )
 }
 
 private fun prepararImagemParaVideo(
@@ -1521,7 +1857,8 @@ private fun postJson(
 
 private fun baixarVideoTemporario(
     videoUrl: String,
-    destino: File
+    destino: File,
+    aoProgredir: (recebidos: Long, total: Long) -> Unit
 ) {
     val connection =
         URL(videoUrl).openConnection()
@@ -1538,14 +1875,56 @@ private fun baixarVideoTemporario(
             )
         }
 
+        val total = connection.contentLengthLong
+        var recebidos = 0L
+        val buffer = ByteArray(64 * 1024)
+
+        aoProgredir(recebidos, total)
+
         connection.inputStream.use { input ->
             FileOutputStream(destino).use { output ->
-                input.copyTo(output)
+                while (true) {
+                    val lidos = input.read(buffer)
+
+                    if (lidos == -1) {
+                        break
+                    }
+
+                    output.write(buffer, 0, lidos)
+
+                    recebidos += lidos.toLong()
+
+                    aoProgredir(recebidos, total)
+                }
+
+                output.flush()
             }
         }
     } finally {
         connection.disconnect()
     }
+}
+
+private fun formatarBytes(bytes: Long): String {
+    if (bytes < 1024L) {
+        return "$bytes B"
+    }
+
+    val kb = bytes / 1024.0
+
+    if (kb < 1024.0) {
+        return String.format(Locale.US, "%.1f KB", kb)
+    }
+
+    val mb = kb / 1024.0
+
+    if (mb < 1024.0) {
+        return String.format(Locale.US, "%.1f MB", mb)
+    }
+
+    val gb = mb / 1024.0
+
+    return String.format(Locale.US, "%.2f GB", gb)
 }
 
 private fun juntarClipesMp4(

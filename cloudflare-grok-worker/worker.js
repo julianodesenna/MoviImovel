@@ -165,6 +165,68 @@ async function saveVideoToR2(env, temporaryVideoUrl, predictionId) {
   return key
 }
 
+
+async function getPVideoPrediction(env, workerOrigin, predictionId) {
+  if (!env.REPLICATE_API_TOKEN) {
+    throw new Error("REPLICATE_API_TOKEN não está configurado no Worker.")
+  }
+
+  if (!env.CLOUDFLARE_AI_GATEWAY_TOKEN) {
+    throw new Error("CLOUDFLARE_AI_GATEWAY_TOKEN não está configurado no Worker.")
+  }
+
+  const accountId = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim()
+  const gatewayName = "default"
+
+  if (!accountId) {
+    throw new Error("CLOUDFLARE_ACCOUNT_ID não está configurado no Worker.")
+  }
+
+  const response = await fetch(
+    `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayName}/replicate/v1/predictions/${encodeURIComponent(predictionId)}`,
+    {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${env.REPLICATE_API_TOKEN}`,
+        "cf-aig-authorization": `Bearer ${env.CLOUDFLARE_AI_GATEWAY_TOKEN}`
+      }
+    }
+  )
+
+  const result = await response.json()
+
+  if (!response.ok) {
+    throw new Error(
+      result?.detail ||
+      result?.error ||
+      result?.message ||
+      `Consulta P-Video retornou HTTP ${response.status}.`
+    )
+  }
+
+  const state = String(result?.status || "starting").toLowerCase()
+  const temporaryVideoUrl = Array.isArray(result?.output)
+    ? result.output[0] || null
+    : result?.output || null
+
+  let permanentVideoUrl = null
+  let savedR2Key = null
+
+  if (state === "succeeded" && temporaryVideoUrl) {
+    savedR2Key = await saveVideoToR2(env, temporaryVideoUrl, predictionId)
+    permanentVideoUrl = `${workerOrigin}/videos/${savedR2Key}`
+  }
+
+  return {
+    state,
+    predictionId,
+    videoUrl: permanentVideoUrl,
+    temporaryVideoUrl,
+    savedR2Key,
+    raw: result
+  }
+}
+
 async function runGrok({
   env,
   imageUrl,
@@ -422,6 +484,39 @@ export default {
       })
     }
 
+
+    if (
+      request.method === "GET" &&
+      url.pathname.startsWith("/prediction-status/")
+    ) {
+      try {
+        const predictionId = decodeURIComponent(
+          url.pathname.slice("/prediction-status/".length)
+        )
+
+        if (!predictionId || predictionId.includes("..")) {
+          return json({ ok: false, error: "predictionId inválido." }, 400)
+        }
+
+        const execution = await getPVideoPrediction(env, url.origin, predictionId)
+
+        return json({
+          ok: true,
+          provider: "pvideo",
+          state: execution.state,
+          predictionId: execution.predictionId,
+          videoUrl: execution.videoUrl,
+          temporaryVideoUrl: execution.temporaryVideoUrl || null,
+          savedR2Key: execution.savedR2Key || null
+        })
+      } catch (error) {
+        return json(
+          { ok: false, error: error?.message || "Erro ao consultar a geração." },
+          500
+        )
+      }
+    }
+
     if (request.method === "GET" && url.pathname === "/") {
       return json({
         ok: true,
@@ -434,6 +529,7 @@ export default {
         ],
         uso: "POST /generate",
         videosPermanentes: "GET /videos/{arquivo}",
+        consultaStatus: "GET /prediction-status/{id}",
         observacao: "preview usa P-Video draft; auto usa P-Video enquanto Grok aguarda ativação."
       })
     }
