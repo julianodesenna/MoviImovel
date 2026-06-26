@@ -116,9 +116,9 @@ function findGeneratedImage(result) {
   return null
 }
 
-async function runNanoBananaEditFromBytes({ env, imageBytes, mimeType, operation, customPrompt, roomType, style }) {
-  if (!env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY não está configurada no Worker.")
+async function runFluxEditFromBytes({ env, imageBytes, mimeType, operation, customPrompt, roomType, style }) {
+  if (!env.AI || typeof env.AI.run !== "function") {
+    throw new Error("Workers AI (binding AI) não está configurado no Worker.")
   }
 
   const bytes = imageBytes instanceof Uint8Array ? imageBytes : new Uint8Array(imageBytes)
@@ -132,45 +132,42 @@ async function runNanoBananaEditFromBytes({ env, imageBytes, mimeType, operation
   }
 
   const prompt = buildImageEditPrompt(operation, customPrompt, roomType, style)
-  const requestBody = {
-    model: "gemini-3.1-flash-image",
-    input: [
-      { type: "text", text: prompt },
-      { type: "image", data: bytesToBase64(bytes), mime_type: contentType }
-    ],
-    response_format: { type: "image", mime_type: "image/jpeg" }
-  }
+  const form = new FormData()
+  form.append("prompt", prompt)
+  form.append("input_image_0", new Blob([bytes], { type: contentType }), "ambiente.jpg")
+  form.append("width", "1024")
+  form.append("height", "768")
+  form.append("guidance", "3.5")
 
-  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-    method: "POST",
-    headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify(requestBody)
+  const serialized = new Response(form)
+  const contentTypeHeader = serialized.headers.get("content-type")
+  const result = await env.AI.run("@cf/black-forest-labs/flux-2-klein-4b", {
+    multipart: {
+      body: serialized.body,
+      contentType: contentTypeHeader
+    }
   })
-  const result = await response.json().catch(() => null)
-  if (!response.ok) {
-    const detail = result?.error?.message || result?.message || `Gemini retornou HTTP ${response.status}.`
-    const code = result?.error?.status || result?.error?.code || response.status
-    throw new Error(`[Gemini ${code}] ${detail}`)
+
+  const imageBase64 = String(result?.image || "")
+  if (!imageBase64) {
+    throw new Error("A FLUX respondeu, mas não retornou uma imagem editada.")
   }
 
-  const generated = findGeneratedImage(result)
-  if (!generated?.data) {
-    throw new Error("O Gemini respondeu, mas não retornou uma imagem editada.")
-  }
-  const imageOutput = decodeBase64ToBytes(generated.data)
+  const imageOutput = decodeBase64ToBytes(imageBase64)
   const key = createEditedImageKey()
   if (!env.VIDEOS) throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
   await env.VIDEOS.put(key, imageOutput, {
-    httpMetadata: { contentType: generated.mimeType },
-    customMetadata: { origem: "Movimovel Gemini 3.1 Flash Image", operacao: operation }
+    httpMetadata: { contentType: "image/jpeg" },
+    customMetadata: { origem: "Movimovel FLUX.2 klein 4B", operacao: operation }
   })
-  return { prompt, imageKey: key, mimeType: generated.mimeType, raw: result }
+
+  return { prompt, imageKey: key, mimeType: "image/jpeg", raw: result }
 }
 
-async function runNanoBananaEdit({ env, imageUrl, operation, customPrompt, roomType, style }) {
+async function runFluxEdit({ env, imageUrl, operation, customPrompt, roomType, style }) {
   const source = await fetch(imageUrl)
   if (!source.ok) throw new Error(`Não foi possível baixar a imagem de origem. HTTP ${source.status}.`)
-  return runNanoBananaEditFromBytes({
+  return runFluxEditFromBytes({
     env,
     imageBytes: new Uint8Array(await source.arrayBuffer()),
     mimeType: source.headers.get("content-type"),
@@ -202,7 +199,7 @@ function friendlyImageError(error) {
     lower.includes("permission denied") ||
     lower.includes("forbidden")
   ) {
-    return "Não foi possível autorizar a edição de imagem. Verifique a configuração da chave Gemini no Worker."
+    return "Não foi possível autorizar a edição de imagem. Verifique a vinculação Workers AI com o nome AI no Worker."
   }
 
   return "Não foi possível editar a imagem. Verifique sua conexão e tente novamente."
@@ -215,8 +212,8 @@ function escapeHtml(value) {
 function imageTestPageHtml(message = "", technical = "", imageUrl = "") {
   const status = message ? `<div class="status ${imageUrl ? "ok" : "error"}"><strong>${escapeHtml(message)}</strong>${technical ? `<pre>${escapeHtml(technical)}</pre>` : ""}</div>` : ""
   const result = imageUrl ? `<div class="card"><img class="result" src="${escapeHtml(imageUrl)}" alt="Imagem editada"></div>` : ""
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Movimovel · Teste de imagem IA</title><style>
-body{margin:0;background:#ececef;color:#151515;font:18px Arial,sans-serif}main{max-width:680px;margin:auto;padding:24px 16px 44px}h1{font-size:30px;margin:0 0 8px}.sub{color:#5c5c5c;line-height:1.45}.card{background:#fff;border:1px solid #d7d4cd;border-radius:18px;padding:18px;margin:16px 0;box-shadow:0 5px 18px #0000000d}label{display:block;font-weight:700;margin:14px 0 8px}input,select,textarea,button{box-sizing:border-box;width:100%;font:inherit;border-radius:12px}input,select,textarea{padding:14px;border:1px solid #c8c5be;background:#fff}textarea{min-height:120px}button{margin-top:18px;padding:16px;border:1px solid #b89349;background:#141414;color:#fff;font-weight:700}.status{padding:16px;border-radius:14px;line-height:1.45;margin:16px 0}.error{background:#fff0f0;color:#842b2b}.ok{background:#edf8ef;color:#205f2f}pre{margin:12px 0 0;white-space:pre-wrap;word-break:break-word;font:14px monospace}.note{color:#6b6256;font-size:14px;line-height:1.45}.result{width:100%;border-radius:14px;display:block}</style></head><body><main><h1>Teste de imagem IA</h1><p class="sub">Envie uma foto, escolha a edição e gere uma prévia. A foto original é preservada.</p>${status}${result}<form class="card" action="/test-image-submit" method="post" enctype="multipart/form-data"><label>Foto do ambiente</label><input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required><label>Tipo de edição</label><select name="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select><label>Tipo de cômodo (opcional)</label><input name="roomType" placeholder="Ex.: sala, quarto, cozinha"><label>Estilo (opcional)</label><input name="style" placeholder="Ex.: moderno, clean, madeira clara"><label>Pedido adicional (opcional)</label><textarea name="prompt" placeholder="Ex.: manter portas, janelas, piso e iluminação. Remover apenas os móveis."></textarea><button type="submit">Gerar imagem</button><p class="note">Após tocar em Gerar imagem, o navegador abrirá a resposta. Não depende de JavaScript.</p></form></main></body></html>`
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Movimovel · Teste FLUX.2 klein 4B · Imagem IA</title><style>
+body{margin:0;background:#ececef;color:#151515;font:18px Arial,sans-serif}main{max-width:680px;margin:auto;padding:24px 16px 44px}h1{font-size:30px;margin:0 0 8px}.sub{color:#5c5c5c;line-height:1.45}.card{background:#fff;border:1px solid #d7d4cd;border-radius:18px;padding:18px;margin:16px 0;box-shadow:0 5px 18px #0000000d}label{display:block;font-weight:700;margin:14px 0 8px}input,select,textarea,button{box-sizing:border-box;width:100%;font:inherit;border-radius:12px}input,select,textarea{padding:14px;border:1px solid #c8c5be;background:#fff}textarea{min-height:120px}button{margin-top:18px;padding:16px;border:1px solid #b89349;background:#141414;color:#fff;font-weight:700}.status{padding:16px;border-radius:14px;line-height:1.45;margin:16px 0}.error{background:#fff0f0;color:#842b2b}.ok{background:#edf8ef;color:#205f2f}pre{margin:12px 0 0;white-space:pre-wrap;word-break:break-word;font:14px monospace}.note{color:#6b6256;font-size:14px;line-height:1.45}.result{width:100%;border-radius:14px;display:block}</style></head><body><main><h1>Teste FLUX.2 klein 4B</h1><p class="sub">Modelo ativo: FLUX.2 klein 4B da Cloudflare. Envie uma foto, escolha a edição e gere uma prévia. A foto original é preservada.</p>${status}${result}<form class="card" action="/test-image-submit" method="post" enctype="multipart/form-data"><label>Foto do ambiente</label><input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required><label>Tipo de edição</label><select name="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select><label>Tipo de cômodo (opcional)</label><input name="roomType" placeholder="Ex.: sala, quarto, cozinha"><label>Estilo (opcional)</label><input name="style" placeholder="Ex.: moderno, clean, madeira clara"><label>Pedido adicional (opcional)</label><textarea name="prompt" placeholder="Ex.: manter portas, janelas, piso e iluminação. Remover apenas os móveis."></textarea><button type="submit">Gerar imagem</button><p class="note">Após tocar em Gerar imagem, o navegador abrirá a resposta. Não depende de JavaScript.</p></form></main></body></html>`
 }
 
 function toNumber(value, fallback = 0) {
@@ -730,7 +727,7 @@ export default {
           return json({ ok: false, error: "operation deve ser empty ou furnish." }, 400)
         }
 
-        const edited = await runNanoBananaEdit({
+        const edited = await runFluxEdit({
           env,
           imageUrl,
           operation,
@@ -741,8 +738,8 @@ export default {
 
         return json({
           ok: true,
-          provider: "gemini",
-          model: "gemini-3.1-flash-image",
+          provider: "cloudflare-workers-ai",
+          model: "@cf/black-forest-labs/flux-2-klein-4b",
           operation,
           imageKey: edited.imageKey,
           imageUrl: `${url.origin}/images/${edited.imageKey}`,
@@ -755,7 +752,7 @@ export default {
           ok: false,
           error: friendlyImageError(error),
           technicalError: error?.message || "Erro desconhecido ao editar a imagem.",
-          model: "gemini-3.1-flash-image"
+          model: "@cf/black-forest-labs/flux-2-klein-4b"
         }, 500)
       }
     }
@@ -771,7 +768,7 @@ export default {
         if (!(photo instanceof File)) throw new Error("Escolha uma foto antes de gerar.")
         if (!photo.type.startsWith("image/")) throw new Error("O arquivo escolhido não é uma imagem válida.")
         if (!['empty','furnish'].includes(operation)) throw new Error("Tipo de edição inválido.")
-        const edited = await runNanoBananaEditFromBytes({
+        const edited = await runFluxEditFromBytes({
           env,
           imageBytes: new Uint8Array(await photo.arrayBuffer()),
           mimeType: photo.type,
@@ -794,14 +791,16 @@ export default {
       return json({
         ok: true,
         projeto: "Movimovel Worker de Vídeo e Imagem",
-        providersDisponiveis: ["grok", "pvideo", "auto", "preview", "gemini"],
+        providersDisponiveis: ["grok", "pvideo", "auto", "preview", "cloudflare-workers-ai-flux"],
         usoVideo: "POST /generate",
         usoImagem: "POST /edit-image",
         testeImagem: "GET /test-image (formulário sem JavaScript)",
         videosPermanentes: "GET /videos/{arquivo}",
         imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
-        observacao: "edit-image usa Gemini 3.1 Flash Image (Gemini 3.1 Flash Image)."
+        observacao: "edit-image usa FLUX.2 klein 4B pelo Workers AI interno da Cloudflare.",
+        modeloImagemAtivo: "@cf/black-forest-labs/flux-2-klein-4b",
+        versaoImagem: "FLUX-KLEIN-4B-20260626"
       })
     }
 
