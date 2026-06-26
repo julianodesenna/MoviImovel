@@ -20,9 +20,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -56,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -82,6 +86,22 @@ private const val MOVIIMOVEL_VIDEO_WORKER =
     "https://moviimovel-grok-worker.julianoocorretor.workers.dev"
 
 private const val MAX_FOTOS_POR_VIDEO = 5
+
+private object PremiumUi {
+    val Fundo = Color(0xFFE6E7E9)
+    val FundoSecundario = Color(0xFFF1F1F2)
+    val Card = Color(0xFFF8F8F7)
+    val CardInterno = Color(0xFFF4F4F3)
+    val Texto = Color(0xFF161616)
+    val TextoSuave = Color(0xFF5E5E5E)
+    val PretoPremium = Color(0xFF111111)
+    val PretoPremium2 = Color(0xFF1E1E1E)
+    val Dourado = Color(0xFFB89349)
+    val DouradoClaro = Color(0xFFE7D4A7)
+    val Borda = Color(0xFFD8D5CF)
+    val BordaEscura = Color(0xFF2D2D2D)
+    val VermelhoSuave = Color(0xFF9D5E5E)
+}
 
 data class MovimentoVideo(
     val nome: String,
@@ -533,7 +553,7 @@ fun MoviImovelApp() {
     MaterialTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = Color(0xFF0E1316)
+            color = PremiumUi.Fundo
         ) {
             Column(
                 modifier = Modifier
@@ -544,18 +564,64 @@ fun MoviImovelApp() {
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(
-                    text = "MoviImovel Vídeo IA",
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = PremiumUi.Card
+                        ),
+                        border = BorderStroke(1.dp, PremiumUi.DouradoClaro)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(58.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "M",
+                                color = PremiumUi.Texto,
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Movitmovel Vídeo IA",
+                        color = PremiumUi.Texto,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = PremiumUi.Card
+                        ),
+                        border = BorderStroke(1.dp, PremiumUi.DouradoClaro)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(50.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "♛",
+                                color = PremiumUi.Dourado,
+                                fontSize = 22.sp
+                            )
+                        }
+                    }
+                }
 
                 if (gerandoVideo) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = Color(0xFF1C292F)
+                            containerColor = PremiumUi.Card
                         ),
                         shape = RoundedCornerShape(14.dp)
                     ) {
@@ -565,30 +631,30 @@ fun MoviImovelApp() {
                         ) {
                             Text(
                                 text = "PROGRESSO REAL DA GERAÇÃO",
-                                color = Color(0xFFF2D8AF),
+                                color = PremiumUi.Texto,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
 
                             Text(
                                 text = "Vídeo $cenaAtualGeracao de ${cenas.size}",
-                                color = Color.White,
+                                color = PremiumUi.Texto,
                                 fontWeight = FontWeight.Bold
                             )
 
                             Text(
                                 text = "Progresso geral real: $progressoGeralReal%",
-                                color = Color.White
+                                color = PremiumUi.Texto
                             )
 
                             Text(
                                 text = "Tempo decorrido: ${formatarTempoDecorrido(segundosDecorridos)}",
-                                color = Color(0xFFB8C7CE)
+                                color = PremiumUi.TextoSuave
                             )
 
                             Text(
                                 text = "O status da IA aparece abaixo. A porcentagem só sobe quando cada vídeo termina.",
-                                color = Color(0xFFB8C7CE),
+                                color = PremiumUi.TextoSuave,
                                 fontSize = 12.sp
                             )
                         }
@@ -598,7 +664,7 @@ fun MoviImovelApp() {
                 Text(
                     text =
                         "Cada foto vira uma cena independente. O aplicativo junta tudo e salva o resultado final automaticamente.",
-                    color = Color(0xFFC6D0D6),
+                    color = PremiumUi.TextoSuave,
                     fontSize = 14.sp
                 )
 
@@ -614,15 +680,17 @@ fun MoviImovelApp() {
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp),
+                        border = BorderStroke(1.dp, PremiumUi.Borda),
+                        contentPadding = PaddingValues(0.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF284B63)
+                            containerColor = PremiumUi.Card
                         ),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = RoundedCornerShape(18.dp)
                     ) {
                         Text(
                             text = "Uma foto",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
+                            color = PremiumUi.Texto,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
 
@@ -634,15 +702,16 @@ fun MoviImovelApp() {
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp),
+                        border = BorderStroke(1.dp, PremiumUi.Dourado),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF236D52)
+                            containerColor = PremiumUi.PretoPremium
                         ),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = RoundedCornerShape(18.dp)
                     ) {
                         Text(
                             text = "Várias fotos",
                             color = Color.White,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
@@ -669,10 +738,11 @@ fun MoviImovelApp() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp),
+                        border = BorderStroke(1.dp, PremiumUi.Dourado),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF304D5B)
+                            containerColor = PremiumUi.PretoPremium
                         ),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(18.dp)
                     ) {
                         Text(
                             text =
@@ -684,7 +754,7 @@ fun MoviImovelApp() {
 
                     Text(
                         text = "Cenas do vídeo",
-                        color = Color.White,
+                        color = PremiumUi.Texto,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
@@ -742,7 +812,7 @@ fun MoviImovelApp() {
 
                     Text(
                         text = "Qualidade",
-                        color = Color.White,
+                        color = PremiumUi.Texto,
                         fontWeight = FontWeight.Bold
                     )
 
@@ -756,7 +826,7 @@ fun MoviImovelApp() {
 
                     Text(
                         text = textoQualidade(modoQualidade),
-                        color = Color(0xFFC6D0D6),
+                        color = PremiumUi.TextoSuave,
                         fontSize = 13.sp
                     )
 
@@ -779,8 +849,8 @@ fun MoviImovelApp() {
                             .fillMaxWidth()
                             .height(56.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFD46A27),
-                            disabledContainerColor = Color(0xFF42342C)
+                            containerColor = PremiumUi.PretoPremium,
+                            disabledContainerColor = Color(0xFF707070)
                         ),
                         shape = RoundedCornerShape(16.dp)
                     ) {
@@ -814,8 +884,8 @@ fun MoviImovelApp() {
                         .fillMaxWidth()
                         .height(46.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF5A3F8C),
-                        disabledContainerColor = Color(0xFF20282E)
+                        containerColor = PremiumUi.PretoPremium,
+                        disabledContainerColor = Color(0xFF707070)
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -830,7 +900,7 @@ fun MoviImovelApp() {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = Color(0xFF243640)
+                            containerColor = PremiumUi.Card
                         ),
                         shape = RoundedCornerShape(14.dp)
                     ) {
@@ -840,7 +910,7 @@ fun MoviImovelApp() {
                         ) {
                             Text(
                                 text = cenaDownloadAtual,
-                                color = Color.White,
+                                color = PremiumUi.Texto,
                                 fontWeight = FontWeight.Bold
                             )
 
@@ -856,8 +926,8 @@ fun MoviImovelApp() {
                                 LinearProgressIndicator(
                                     progress = progresso,
                                     modifier = Modifier.fillMaxWidth(),
-                                    color = Color(0xFFFFA45B),
-                                    trackColor = Color(0xFF4C6470)
+                                    color = PremiumUi.Dourado,
+                                    trackColor = PremiumUi.Borda
                                 )
 
                                 Text(
@@ -866,19 +936,19 @@ fun MoviImovelApp() {
                                             formatarBytes(bytesBaixados) +
                                             " de " +
                                             formatarBytes(bytesTotais),
-                                    color = Color(0xFFD9E6EB),
+                                    color = PremiumUi.TextoSuave,
                                     fontSize = 13.sp
                                 )
                             } else {
                                 LinearProgressIndicator(
                                     modifier = Modifier.fillMaxWidth(),
-                                    color = Color(0xFFFFA45B),
-                                    trackColor = Color(0xFF4C6470)
+                                    color = PremiumUi.Dourado,
+                                    trackColor = PremiumUi.Borda
                                 )
 
                                 Text(
                                     text = "Recebendo o vídeo...",
-                                    color = Color(0xFFD9E6EB),
+                                    color = PremiumUi.TextoSuave,
                                     fontSize = 13.sp
                                 )
                             }
@@ -889,13 +959,13 @@ fun MoviImovelApp() {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF172228)
+                        containerColor = PremiumUi.Card
                     ),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text(
                         text = mensagem,
-                        color = Color(0xFFF2D8AF),
+                        color = PremiumUi.Texto,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
@@ -931,9 +1001,10 @@ private fun CardCena(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF182126)
+            containerColor = PremiumUi.Card
         ),
-        shape = RoundedCornerShape(16.dp)
+        border = BorderStroke(1.dp, PremiumUi.Borda),
+        shape = RoundedCornerShape(22.dp)
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -964,13 +1035,13 @@ private fun CardCena(
                 ) {
                     Text(
                         text = "$numero. ${cena.nome}",
-                        color = Color.White,
+                        color = PremiumUi.Texto,
                         fontWeight = FontWeight.Bold
                     )
 
                     Text(
                         text = "${cena.duracao} segundos",
-                        color = Color(0xFFC6D0D6),
+                        color = PremiumUi.TextoSuave,
                         fontSize = 13.sp
                     )
                 }
@@ -981,14 +1052,14 @@ private fun CardCena(
                 ) {
                     Text(
                         text = "Remover",
-                        color = Color(0xFFFFA5A5)
+                        color = PremiumUi.VermelhoSuave
                     )
                 }
             }
 
             Text(
                 text = "Movimento: ${cena.movimento.nome}",
-                color = Color(0xFFFFC58B),
+                color = PremiumUi.Dourado,
                 fontWeight = FontWeight.SemiBold
             )
 
@@ -997,22 +1068,23 @@ private fun CardCena(
                 onClick = onAlterarMovimento,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp),
+                    .height(48.dp),
+                border = BorderStroke(1.dp, PremiumUi.BordaEscura),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF304D5B)
+                    containerColor = PremiumUi.Card
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Text(
                     text = "Escolher movimento",
-                    color = Color.White,
+                    color = PremiumUi.Texto,
                     fontWeight = FontWeight.SemiBold
                 )
             }
 
             Text(
                 text = "Prompt desta cena",
-                color = Color.White,
+                color = PremiumUi.Texto,
                 fontWeight = FontWeight.Bold
             )
 
@@ -1038,13 +1110,13 @@ private fun CardCena(
             ) {
                 Text(
                     text = "Restaurar prompt automático",
-                    color = Color(0xFFFFC58B)
+                    color = PremiumUi.Dourado
                 )
             }
 
             Text(
                 text = "Duração",
-                color = Color.White,
+                color = PremiumUi.Texto,
                 fontWeight = FontWeight.Bold
             )
 
@@ -1064,16 +1136,16 @@ private fun CardCena(
                         colors = ButtonDefaults.buttonColors(
                             containerColor =
                                 if (cena.duracao == segundos) {
-                                    Color(0xFFD46A27)
+                                    PremiumUi.PretoPremium
                                 } else {
-                                    Color(0xFF304D5B)
+                                    PremiumUi.FundoSecundario
                                 }
                         ),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text(
                             text = "${segundos}s",
-                            color = Color.White,
+                            color = if (cena.duracao == segundos) Color.White else PremiumUi.Texto,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -1094,7 +1166,7 @@ private fun TelaEscolherMovimento(
     MaterialTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = Color(0xFF0E1316)
+            color = PremiumUi.Fundo
         ) {
             Column(
                 modifier = Modifier
@@ -1110,13 +1182,13 @@ private fun TelaEscolherMovimento(
                 ) {
                     Text(
                         text = "← Voltar para as cenas",
-                        color = Color(0xFFFFC58B)
+                        color = PremiumUi.Dourado
                     )
                 }
 
                 Text(
                     text = "Escolher movimento",
-                    color = Color.White,
+                    color = PremiumUi.Texto,
                     fontSize = 23.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1124,13 +1196,13 @@ private fun TelaEscolherMovimento(
                 Text(
                     text =
                         "${cena.nome}. Ao escolher outro movimento, o prompt automático correspondente será restaurado. Depois ele continuará editável.",
-                    color = Color(0xFFC6D0D6),
+                    color = PremiumUi.TextoSuave,
                     fontSize = 14.sp
                 )
 
                 Text(
                     text = "RECOMENDADOS PARA IMÓVEIS",
-                    color = Color(0xFFFFC58B),
+                    color = PremiumUi.Dourado,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(
@@ -1152,7 +1224,7 @@ private fun TelaEscolherMovimento(
 
                 Text(
                     text = "TODOS OS MOVIMENTOS",
-                    color = Color(0xFFFFC58B),
+                    color = PremiumUi.Dourado,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(
@@ -1187,9 +1259,9 @@ private fun MovimentoLinha(
         colors = CardDefaults.cardColors(
             containerColor =
                 if (selecionado) {
-                    Color(0xFF3B5D70)
+                    PremiumUi.PretoPremium
                 } else {
-                    Color(0xFF182126)
+                    PremiumUi.Card
                 }
         ),
         shape = RoundedCornerShape(12.dp)
@@ -1200,7 +1272,7 @@ private fun MovimentoLinha(
         ) {
             Text(
                 text = movimento.nome,
-                color = Color.White,
+                color = if (selecionado) Color.White else PremiumUi.Texto,
                 textAlign = TextAlign.Start,
                 fontWeight =
                     if (selecionado) {
@@ -1246,16 +1318,16 @@ private fun QualidadeSelector(
                         colors = ButtonDefaults.buttonColors(
                             containerColor =
                                 if (selecionada == qualidade) {
-                                    Color(0xFF6F4C9B)
+                                    PremiumUi.PretoPremium
                                 } else {
-                                    Color(0xFF304D5B)
+                                    PremiumUi.FundoSecundario
                                 }
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
                             text = qualidade,
-                            color = Color.White,
+                            color = if (selecionada == qualidade) Color.White else PremiumUi.Texto,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center
@@ -1270,13 +1342,13 @@ private fun QualidadeSelector(
 @Composable
 private fun campoCores() =
     OutlinedTextFieldDefaults.colors(
-        focusedTextColor = Color.White,
-        unfocusedTextColor = Color(0xFFE1E8EC),
-        focusedBorderColor = Color(0xFFFFA45B),
-        unfocusedBorderColor = Color(0xFF74818A),
-        focusedLabelColor = Color(0xFFFFC58B),
-        unfocusedLabelColor = Color(0xFFBBC7CD),
-        cursorColor = Color(0xFFFFA45B)
+        focusedTextColor = PremiumUi.Texto,
+        unfocusedTextColor = PremiumUi.Texto,
+        focusedBorderColor = PremiumUi.Dourado,
+        unfocusedBorderColor = PremiumUi.Borda,
+        focusedLabelColor = PremiumUi.Dourado,
+        unfocusedLabelColor = PremiumUi.TextoSuave,
+        cursorColor = PremiumUi.Dourado
     )
 
 private fun nomesMovimentosRecomendados() = setOf(
