@@ -19,6 +19,185 @@ function createUploadedImageKey() {
   return `uploads/${year}-${month}-${day}/foto-${crypto.randomUUID()}.jpg`
 }
 
+
+function createEditedImageKey() {
+  const now = new Date()
+  const year = now.getUTCFullYear()
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(now.getUTCDate()).padStart(2, "0")
+
+  return `edits/${year}-${month}-${day}/imagem-${crypto.randomUUID()}.jpg`
+}
+
+function bytesToBase64(bytes) {
+  const chunkSize = 0x8000
+  let binary = ""
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+  }
+
+  return btoa(binary)
+}
+
+function normalizeImageMimeType(value) {
+  const mimeType = String(value || "").split(";")[0].trim().toLowerCase()
+  return mimeType.startsWith("image/") ? mimeType : "image/jpeg"
+}
+
+function buildImageEditPrompt(operation, customPrompt, roomType, style) {
+  const baseRules = [
+    "Preserve exactly the structural elements of the original property: walls, floor, ceiling, doors, windows, baseboards, electrical outlets, natural lighting and camera perspective.",
+    "Keep realistic scale and perspective.",
+    "Do not add people, animals, watermarks, logos or text.",
+    "This is an illustrative AI edit for a real estate presentation; do not hide structural defects."
+  ].join(" ")
+
+  if (customPrompt) {
+    return `${customPrompt.trim()} ${baseRules}`
+  }
+
+  if (operation === "empty") {
+    return [
+      "Remove all movable furniture, sofa, TV, rug, table, appliances, decorations and loose objects from this room.",
+      "Reconstruct the visible floor, walls and background naturally.",
+      "Leave the room empty, clean and realistic for a real estate listing.",
+      baseRules
+    ].join(" ")
+  }
+
+  const safeRoom = roomType || "room"
+  const safeStyle = style || "modern, elegant and neutral"
+
+  return [
+    `Furnish this ${safeRoom} with realistic ${safeStyle} furniture and discreet decor appropriate for a real estate listing.`,
+    "Do not block doors, windows, passages or fixed appliances.",
+    baseRules
+  ].join(" ")
+}
+
+function findGeneratedImage(result) {
+  const direct = result?.output_image || result?.outputImage
+  if (direct?.data) {
+    return {
+      data: direct.data,
+      mimeType: normalizeImageMimeType(direct.mime_type || direct.mimeType || "image/jpeg")
+    }
+  }
+
+  const candidates = Array.isArray(result?.output)
+    ? result.output
+    : Array.isArray(result?.outputs)
+      ? result.outputs
+      : []
+
+  for (const item of candidates) {
+    const image = item?.image || item?.output_image || item?.outputImage
+    if (image?.data) {
+      return {
+        data: image.data,
+        mimeType: normalizeImageMimeType(image.mime_type || image.mimeType || "image/jpeg")
+      }
+    }
+
+    const content = item?.content || item
+    const parts = Array.isArray(content?.parts) ? content.parts : []
+    for (const part of parts) {
+      const inline = part?.inline_data || part?.inlineData
+      if (inline?.data) {
+        return {
+          data: inline.data,
+          mimeType: normalizeImageMimeType(inline.mime_type || inline.mimeType || "image/jpeg")
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+async function runNanoBananaEdit({ env, imageUrl, operation, customPrompt, roomType, style }) {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY não está configurada no Worker.")
+  }
+
+  const source = await fetch(imageUrl)
+  if (!source.ok) {
+    throw new Error(`Não foi possível baixar a imagem de origem. HTTP ${source.status}.`)
+  }
+
+  const contentType = normalizeImageMimeType(source.headers.get("content-type"))
+  const imageBuffer = await source.arrayBuffer()
+
+  if (imageBuffer.byteLength < 100) {
+    throw new Error("A imagem de origem está vazia ou inválida.")
+  }
+
+  if (imageBuffer.byteLength > 15 * 1024 * 1024) {
+    throw new Error("A imagem de origem excede 15 MB. Reduza o tamanho antes de editar.")
+  }
+
+  const prompt = buildImageEditPrompt(operation, customPrompt, roomType, style)
+  const requestBody = {
+    model: "gemini-2.5-flash-image",
+    input: [
+      { type: "text", text: prompt },
+      {
+        type: "image",
+        data: bytesToBase64(new Uint8Array(imageBuffer)),
+        mime_type: contentType
+      }
+    ],
+    response_format: {
+      type: "image",
+      mime_type: "image/jpeg"
+    }
+  }
+
+  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": env.GEMINI_API_KEY,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(requestBody)
+  })
+
+  const result = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    const detail = result?.error?.message || result?.message || `Gemini retornou HTTP ${response.status}.`
+    throw new Error(detail)
+  }
+
+  const generated = findGeneratedImage(result)
+  if (!generated?.data) {
+    throw new Error("O Gemini respondeu, mas não retornou uma imagem editada.")
+  }
+
+  const imageBytes = decodeBase64ToBytes(generated.data)
+  const key = createEditedImageKey()
+
+  if (!env.VIDEOS) {
+    throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
+  }
+
+  await env.VIDEOS.put(key, imageBytes, {
+    httpMetadata: { contentType: generated.mimeType },
+    customMetadata: {
+      origem: "Movimovel Nano Banana",
+      operacao: operation
+    }
+  })
+
+  return {
+    prompt,
+    imageKey: key,
+    mimeType: generated.mimeType,
+    raw: result
+  }
+}
+
 function json(data, status = 200) {
   return Response.json(data, { status })
 }
@@ -517,20 +696,63 @@ export default {
       }
     }
 
+    if (request.method === "POST" && url.pathname === "/edit-image") {
+      try {
+        const body = await request.json()
+        const imageUrl = String(body.imageUrl || "").trim()
+        const operation = String(body.operation || "empty").trim().toLowerCase()
+        const customPrompt = String(body.prompt || "").trim()
+        const roomType = String(body.roomType || "").trim()
+        const style = String(body.style || "").trim()
+
+        if (!imageUrl.startsWith("https://") && !imageUrl.startsWith("http://")) {
+          return json({ ok: false, error: "imageUrl deve ser uma URL pública iniciando com https:// ou http://." }, 400)
+        }
+
+        if (!["empty", "furnish"].includes(operation)) {
+          return json({ ok: false, error: "operation deve ser empty ou furnish." }, 400)
+        }
+
+        const edited = await runNanoBananaEdit({
+          env,
+          imageUrl,
+          operation,
+          customPrompt,
+          roomType,
+          style
+        })
+
+        return json({
+          ok: true,
+          provider: "gemini",
+          model: "gemini-2.5-flash-image",
+          operation,
+          imageKey: edited.imageKey,
+          imageUrl: `${url.origin}/images/${edited.imageKey}`,
+          promptUsed: edited.prompt,
+          mimeType: edited.mimeType,
+          notice: "Imagem ilustrativa editada por IA. Preserve a foto original e revise o resultado antes de publicar."
+        })
+      } catch (error) {
+        return json({
+          ok: false,
+          error: error?.message || "Erro desconhecido ao editar a imagem.",
+          model: "gemini-2.5-flash-image"
+        }, 500)
+      }
+    }
+
     if (request.method === "GET" && url.pathname === "/") {
       return json({
         ok: true,
-        projeto: "MoviImovel Worker de Vídeo",
-        providersDisponiveis: [
-          "grok",
-          "pvideo",
-          "auto",
-          "preview"
-        ],
-        uso: "POST /generate",
+        projeto: "Movimovel Worker de Vídeo e Imagem",
+        providersDisponiveis: ["grok", "pvideo", "auto", "preview", "gemini"],
+        usoVideo: "POST /generate",
+        usoImagem: "POST /edit-image",
         videosPermanentes: "GET /videos/{arquivo}",
+        imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
-        observacao: "preview usa P-Video draft; auto usa P-Video enquanto Grok aguarda ativação."
+        observacao: "edit-image usa Gemini 2.5 Flash Image (Nano Banana)."
       })
     }
 
