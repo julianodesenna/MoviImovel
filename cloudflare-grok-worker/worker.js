@@ -202,6 +202,124 @@ function json(data, status = 200) {
   return Response.json(data, { status })
 }
 
+function friendlyImageError(error) {
+  const detail = String(error?.message || "")
+  const lower = detail.toLowerCase()
+
+  if (
+    lower.includes("429") ||
+    lower.includes("resource_exhausted") ||
+    lower.includes("quota") ||
+    lower.includes("rate limit") ||
+    lower.includes("limit exceeded")
+  ) {
+    return "Não foi possível editar a imagem agora. A cota gratuita da IA pode ter sido atingida ou estar temporariamente indisponível. Tente novamente mais tarde."
+  }
+
+  if (
+    lower.includes("api key") ||
+    lower.includes("unauthenticated") ||
+    lower.includes("permission denied") ||
+    lower.includes("forbidden")
+  ) {
+    return "Não foi possível autorizar a edição de imagem. Verifique a configuração da chave Gemini no Worker."
+  }
+
+  return "Não foi possível editar a imagem. Verifique sua conexão e tente novamente."
+}
+
+function imageTestPageHtml() {
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Movimovel · Teste de imagem IA</title>
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:#ececef;color:#141414;font-family:Arial,sans-serif}
+main{max-width:680px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:28px;margin:0 0 8px}.sub{color:#555;line-height:1.45;margin:0 0 22px}
+.card{background:#fff;border:1px solid #d5d2ca;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 6px 20px #0000000d}
+label{display:block;font-weight:700;margin:0 0 8px}
+input,select,textarea,button{width:100%;font:inherit;border-radius:12px}
+input,select,textarea{border:1px solid #c9c6be;padding:13px;background:#fff}
+textarea{min-height:112px;resize:vertical}
+button{border:1px solid #b89349;background:#151515;color:white;padding:15px;font-weight:700;margin-top:14px}
+button:disabled{opacity:.55}
+#preview,#result{width:100%;border-radius:14px;margin-top:12px;display:none;max-height:480px;object-fit:contain;background:#f4f4f4}
+#status{white-space:pre-wrap;line-height:1.45;margin-top:14px;color:#333}
+.note{font-size:13px;color:#6a6255;line-height:1.4}
+</style>
+</head>
+<body><main>
+<h1>Teste de imagem IA</h1>
+<p class="sub">Envie uma foto, escolha a edição e gere uma prévia. A foto original é preservada.</p>
+<div class="card">
+<label>Foto do ambiente</label>
+<input id="file" type="file" accept="image/jpeg,image/png,image/webp">
+<img id="preview" alt="Prévia da foto">
+</div>
+<div class="card">
+<label>Tipo de edição</label>
+<select id="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select>
+<label style="margin-top:14px">Tipo de cômodo (opcional)</label>
+<input id="roomType" placeholder="Ex.: sala, quarto, cozinha">
+<label style="margin-top:14px">Estilo (opcional)</label>
+<input id="style" placeholder="Ex.: moderno, clean, madeira clara">
+<label style="margin-top:14px">Pedido adicional (opcional)</label>
+<textarea id="prompt" placeholder="Ex.: manter a janela e a iluminação exatamente como estão"></textarea>
+<button id="go">Gerar imagem</button>
+<div id="status"></div>
+<img id="result" alt="Imagem editada por IA">
+<p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar.</p>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let selectedFile=null;
+$("file").addEventListener("change",e=>{
+  selectedFile=e.target.files?.[0]||null;
+  $("preview").style.display="none";
+  if(selectedFile){
+    $("preview").src=URL.createObjectURL(selectedFile);
+    $("preview").style.display="block";
+  }
+});
+function toBase64(file){
+ return new Promise((resolve,reject)=>{
+  const r=new FileReader();
+  r.onerror=()=>reject(new Error("Não foi possível ler a foto."));
+  r.onload=()=>resolve(String(r.result).split(",")[1]||"");
+  r.readAsDataURL(file);
+ });
+}
+$("go").addEventListener("click",async()=>{
+ const status=$("status"),button=$("go"),result=$("result");
+ result.style.display="none"; result.removeAttribute("src");
+ if(!selectedFile){status.textContent="Escolha uma foto primeiro.";return}
+ if(selectedFile.size>15*1024*1024){status.textContent="A foto ultrapassa 15 MB. Escolha uma menor.";return}
+ button.disabled=true; status.textContent="Enviando a foto...";
+ try{
+  const imageBase64=await toBase64(selectedFile);
+  const upload=await fetch("/upload-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageBase64,mimeType:selectedFile.type||"image/jpeg"})});
+  const up=await upload.json();
+  if(!upload.ok||!up.ok)throw new Error(up.error||"Falha ao enviar a foto.");
+  status.textContent="Gerando a edição com IA. Isso pode levar alguns instantes...";
+  const edit=await fetch("/edit-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+    imageUrl:up.imageUrl,operation:$("operation").value,roomType:$("roomType").value,style:$("style").value,prompt:$("prompt").value
+  })});
+  const out=await edit.json();
+  if(!edit.ok||!out.ok)throw new Error(out.error||"Falha na edição.");
+  result.src=out.imageUrl; result.style.display="block";
+  status.textContent="Imagem pronta.";
+ }catch(error){status.textContent=error?.message||"Não foi possível concluir a edição."}
+ finally{button.disabled=false}
+});
+</script></body></html>`
+}
+
 function toNumber(value, fallback = 0) {
   const number = Number(value)
   return Number.isFinite(number) ? number : fallback
@@ -736,10 +854,17 @@ export default {
       } catch (error) {
         return json({
           ok: false,
-          error: error?.message || "Erro desconhecido ao editar a imagem.",
+          error: friendlyImageError(error),
+          technicalError: error?.message || "Erro desconhecido ao editar a imagem.",
           model: "gemini-2.5-flash-image"
         }, 500)
       }
+    }
+
+    if (request.method === "GET" && url.pathname === "/test-image") {
+      return new Response(imageTestPageHtml(), {
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
+      })
     }
 
     if (request.method === "GET" && url.pathname === "/") {
@@ -749,6 +874,7 @@ export default {
         providersDisponiveis: ["grok", "pvideo", "auto", "preview", "gemini"],
         usoVideo: "POST /generate",
         usoImagem: "POST /edit-image",
+        testeImagem: "GET /test-image",
         videosPermanentes: "GET /videos/{arquivo}",
         imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
