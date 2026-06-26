@@ -116,17 +116,21 @@ function findGeneratedImage(result) {
   return null
 }
 
-async function runNanoBananaEdit({ env, imageUrl, operation, customPrompt, roomType, style }) {
+async function runNanoBananaEdit({ env, imageKey, operation, customPrompt, roomType, style }) {
   if (!env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY não está configurada no Worker.")
   }
 
-  const source = await fetch(imageUrl)
-  if (!source.ok) {
-    throw new Error(`Não foi possível baixar a imagem de origem. HTTP ${source.status}.`)
+  if (!env.VIDEOS) {
+    throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
   }
 
-  const contentType = normalizeImageMimeType(source.headers.get("content-type"))
+  const source = await env.VIDEOS.get(imageKey)
+  if (!source) {
+    throw new Error("Não foi possível localizar a imagem enviada no armazenamento.")
+  }
+
+  const contentType = normalizeImageMimeType(source.httpMetadata?.contentType || "image/jpeg")
   const imageBuffer = await source.arrayBuffer()
 
   if (imageBuffer.byteLength < 100) {
@@ -178,10 +182,6 @@ async function runNanoBananaEdit({ env, imageUrl, operation, customPrompt, roomT
   const imageBytes = decodeBase64ToBytes(generated.data)
   const key = createEditedImageKey()
 
-  if (!env.VIDEOS) {
-    throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
-  }
-
   await env.VIDEOS.put(key, imageBytes, {
     httpMetadata: { contentType: generated.mimeType },
     customMetadata: {
@@ -228,7 +228,7 @@ function friendlyImageError(error) {
   return "Não foi possível editar a imagem. Verifique sua conexão e tente novamente."
 }
 
-function imageTestPageHtml(resultHtml = "") {
+function imageTestPageHtml() {
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -236,53 +236,88 @@ function imageTestPageHtml(resultHtml = "") {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Movimovel · Teste de imagem IA</title>
 <style>
-*{box-sizing:border-box} body{margin:0;background:#ececef;color:#141414;font-family:Arial,sans-serif}
-main{max-width:680px;margin:0 auto;padding:24px 16px 40px} h1{font-size:28px;margin:0 0 8px}.sub{color:#555;line-height:1.45}
-.card{background:#fff;border:1px solid #d5d2ca;border-radius:18px;padding:16px;margin:14px 0;box-shadow:0 6px 20px #0000000d}
-label{display:block;font-weight:700;margin:14px 0 8px} input,select,textarea,button{width:100%;font:inherit;border-radius:12px}
-input,select,textarea{border:1px solid #c9c6be;padding:13px;background:#fff} textarea{min-height:108px}
-button{border:1px solid #b89349;background:#151515;color:#fff;padding:15px;font-weight:700;margin-top:16px}
-#loading{display:none;margin-top:14px;padding:12px;border-radius:10px;background:#f6f1e6;color:#53421e}
-.result-ok{padding:14px;border-radius:12px;background:#edf8ef;color:#1d5f2b;white-space:pre-wrap;line-height:1.45}
-.result-error{padding:14px;border-radius:12px;background:#fff0f0;color:#8d2525;white-space:pre-wrap;line-height:1.45}
-.result-img{width:100%;border-radius:14px;margin-top:14px}
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:#ececef;color:#141414;font-family:Arial,sans-serif}
+main{max-width:680px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:28px;margin:0 0 8px}.sub{color:#555;line-height:1.45;margin:0 0 22px}
+.card{background:#fff;border:1px solid #d5d2ca;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 6px 20px #0000000d}
+label{display:block;font-weight:700;margin:0 0 8px}
+input,select,textarea,button{width:100%;font:inherit;border-radius:12px}
+input,select,textarea{border:1px solid #c9c6be;padding:13px;background:#fff}
+textarea{min-height:112px;resize:vertical}
+button{border:1px solid #b89349;background:#151515;color:white;padding:15px;font-weight:700;margin-top:14px}
+button:disabled{opacity:.55}
+#preview,#result{width:100%;border-radius:14px;margin-top:12px;display:none;max-height:480px;object-fit:contain;background:#f4f4f4}
+#status{white-space:pre-wrap;line-height:1.45;margin-top:14px;color:#333}
 .note{font-size:13px;color:#6a6255;line-height:1.4}
 </style>
 </head>
 <body><main>
 <h1>Teste de imagem IA</h1>
 <p class="sub">Envie uma foto, escolha a edição e gere uma prévia. A foto original é preservada.</p>
-${resultHtml}
-<form id="imageForm" method="POST" action="/test-image-run" enctype="multipart/form-data">
 <div class="card">
 <label>Foto do ambiente</label>
-<input name="image" type="file" accept="image/jpeg,image/png,image/webp" required>
+<input id="file" type="file" accept="image/jpeg,image/png,image/webp">
+<img id="preview" alt="Prévia da foto">
+</div>
+<div class="card">
 <label>Tipo de edição</label>
-<select name="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select>
-<label>Tipo de cômodo (opcional)</label>
-<input name="roomType" placeholder="Ex.: sala, quarto, cozinha">
-<label>Estilo (opcional)</label>
-<input name="style" placeholder="Ex.: moderno, clean, madeira clara">
-<label>Pedido adicional (opcional)</label>
-<textarea name="prompt" placeholder="Ex.: manter portas, janelas e iluminação exatamente como estão"></textarea>
-<button id="go" type="submit">Gerar imagem</button>
-<div id="loading">Enviando a foto e pedindo a edição para a IA. Esta página pode levar alguns segundos.</div>
+<select id="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select>
+<label style="margin-top:14px">Tipo de cômodo (opcional)</label>
+<input id="roomType" placeholder="Ex.: sala, quarto, cozinha">
+<label style="margin-top:14px">Estilo (opcional)</label>
+<input id="style" placeholder="Ex.: moderno, clean, madeira clara">
+<label style="margin-top:14px">Pedido adicional (opcional)</label>
+<textarea id="prompt" placeholder="Ex.: manter a janela e a iluminação exatamente como estão"></textarea>
+<button id="go">Gerar imagem</button>
+<div id="status"></div>
+<img id="result" alt="Imagem editada por IA">
 <p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar.</p>
 </div>
-</form>
+</main>
 <script>
-document.getElementById("imageForm").addEventListener("submit", function(){
- const b=document.getElementById("go"); b.disabled=true; b.textContent="Enviando...";
- document.getElementById("loading").style.display="block";
+const $=id=>document.getElementById(id);
+let selectedFile=null;
+$("file").addEventListener("change",e=>{
+  selectedFile=e.target.files?.[0]||null;
+  $("preview").style.display="none";
+  if(selectedFile){
+    $("preview").src=URL.createObjectURL(selectedFile);
+    $("preview").style.display="block";
+  }
 });
-</script>
-</main></body></html>`
+function toBase64(file){
+ return new Promise((resolve,reject)=>{
+  const r=new FileReader();
+  r.onerror=()=>reject(new Error("Não foi possível ler a foto."));
+  r.onload=()=>resolve(String(r.result).split(",")[1]||"");
+  r.readAsDataURL(file);
+ });
 }
-
-function escapeHtml(value) {
-  return String(value || "").replace(/[&<>"']/g, char => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-  }[char]))
+$("go").addEventListener("click",async()=>{
+ const status=$("status"),button=$("go"),result=$("result");
+ result.style.display="none"; result.removeAttribute("src");
+ if(!selectedFile){status.textContent="Escolha uma foto primeiro.";return}
+ if(selectedFile.size>15*1024*1024){status.textContent="A foto ultrapassa 15 MB. Escolha uma menor.";return}
+ button.disabled=true; status.textContent="Enviando a foto...";
+ try{
+  const imageBase64=await toBase64(selectedFile);
+  const upload=await fetch("/upload-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageBase64,mimeType:selectedFile.type||"image/jpeg"})});
+  const up=await upload.json();
+  if(!upload.ok||!up.ok)throw new Error(up.error||"Falha ao enviar a foto.");
+  status.textContent="Gerando a edição com IA. Isso pode levar alguns instantes...";
+  const edit=await fetch("/edit-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+    imageKey:up.imageKey,operation:$("operation").value,roomType:$("roomType").value,style:$("style").value,prompt:$("prompt").value
+  })});
+  const out=await edit.json();
+  if(!edit.ok||!out.ok)throw new Error(out.error||"Falha na edição.");
+  result.src=out.imageUrl; result.style.display="block";
+  status.textContent="Imagem pronta.";
+ }catch(error){status.textContent=error?.message||"Não foi possível concluir a edição."}
+ finally{button.disabled=false}
+});
+</script></body></html>`
 }
 
 function toNumber(value, fallback = 0) {
@@ -782,14 +817,14 @@ export default {
     if (request.method === "POST" && url.pathname === "/edit-image") {
       try {
         const body = await request.json()
-        const imageUrl = String(body.imageUrl || "").trim()
+        const imageKey = String(body.imageKey || "").trim()
         const operation = String(body.operation || "empty").trim().toLowerCase()
         const customPrompt = String(body.prompt || "").trim()
         const roomType = String(body.roomType || "").trim()
         const style = String(body.style || "").trim()
 
-        if (!imageUrl.startsWith("https://") && !imageUrl.startsWith("http://")) {
-          return json({ ok: false, error: "imageUrl deve ser uma URL pública iniciando com https:// ou http://." }, 400)
+        if (!imageKey || !imageKey.startsWith("uploads/") || imageKey.includes("..")) {
+          return json({ ok: false, error: "imageKey inválida para edição." }, 400)
         }
 
         if (!["empty", "furnish"].includes(operation)) {
@@ -798,7 +833,7 @@ export default {
 
         const edited = await runNanoBananaEdit({
           env,
-          imageUrl,
+          imageKey,
           operation,
           customPrompt,
           roomType,
@@ -826,61 +861,6 @@ export default {
       }
     }
 
-    if (request.method === "POST" && url.pathname === "/test-image-run") {
-      try {
-        const form = await request.formData()
-        const image = form.get("image")
-        const operation = String(form.get("operation") || "empty").trim().toLowerCase()
-        const roomType = String(form.get("roomType") || "").trim()
-        const style = String(form.get("style") || "").trim()
-        const customPrompt = String(form.get("prompt") || "").trim()
-
-        if (!(image instanceof File) || image.size < 100) {
-          return new Response(imageTestPageHtml('<div class="result-error">Escolha uma foto válida antes de gerar.</div>'), {
-            status: 400, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
-          })
-        }
-        if (image.size > 15 * 1024 * 1024) {
-          return new Response(imageTestPageHtml('<div class="result-error">A foto ultrapassa 15 MB. Escolha uma imagem menor.</div>'), {
-            status: 413, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
-          })
-        }
-        if (!["empty", "furnish"].includes(operation)) {
-          throw new Error("Tipo de edição inválido.")
-        }
-
-        const mimeType = normalizeImageMimeType(image.type)
-        const imageBytes = new Uint8Array(await image.arrayBuffer())
-        const uploadKey = createUploadedImageKey()
-
-        await env.VIDEOS.put(uploadKey, imageBytes, {
-          httpMetadata: { contentType: mimeType },
-          customMetadata: { origem: "Página de teste Movimovel" }
-        })
-
-        const edited = await runNanoBananaEdit({
-          env,
-          imageUrl: `${url.origin}/images/${uploadKey}`,
-          operation,
-          customPrompt,
-          roomType,
-          style
-        })
-
-        const success = `<div class="card"><div class="result-ok">Imagem gerada com sucesso.</div><img class="result-img" src="${escapeHtml(`${url.origin}/images/${edited.imageKey}`)}" alt="Imagem editada por IA"><p class="note">Foto original preservada. Resultado: imagem ilustrativa editada por IA.</p></div>`
-        return new Response(imageTestPageHtml(success), {
-          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
-        })
-      } catch (error) {
-        const message = friendlyImageError(error)
-        const technical = escapeHtml(error?.message || "Erro desconhecido.")
-        const failure = `<div class="card"><div class="result-error">${escapeHtml(message)}\n\nDetalhe técnico do teste:\n${technical}</div></div>`
-        return new Response(imageTestPageHtml(failure), {
-          status: 500, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
-        })
-      }
-    }
-
     if (request.method === "GET" && url.pathname === "/test-image") {
       return new Response(imageTestPageHtml(), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
@@ -894,7 +874,7 @@ export default {
         providersDisponiveis: ["grok", "pvideo", "auto", "preview", "gemini"],
         usoVideo: "POST /generate",
         usoImagem: "POST /edit-image",
-        testeImagem: "GET /test-image · POST /test-image-run",
+        testeImagem: "GET /test-image",
         videosPermanentes: "GET /videos/{arquivo}",
         imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
