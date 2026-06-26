@@ -270,7 +270,7 @@ button:disabled{opacity:.55}
 <input id="style" placeholder="Ex.: moderno, clean, madeira clara">
 <label style="margin-top:14px">Pedido adicional (opcional)</label>
 <textarea id="prompt" placeholder="Ex.: manter a janela e a iluminação exatamente como estão"></textarea>
-<button id="go">Gerar imagem</button>
+<button id="go" type="button" onclick="window.movimovelStartImageTest()">Gerar imagem</button>
 <div id="status"></div>
 <img id="result" alt="Imagem editada por IA">
 <p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar. Nesta página de teste, erros exibem um detalhe técnico para diagnóstico.</p>
@@ -279,12 +279,15 @@ button:disabled{opacity:.55}
 <script>
 const $=id=>document.getElementById(id);
 let selectedFile=null;
+const waitPaint=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+function setStatus(message){$("status").textContent=message;}
 $("file").addEventListener("change",e=>{
   selectedFile=e.target.files?.[0]||null;
   $("preview").style.display="none";
   if(selectedFile){
     $("preview").src=URL.createObjectURL(selectedFile);
     $("preview").style.display="block";
+    setStatus("Foto selecionada. Toque em Gerar imagem.");
   }
 });
 function toBase64(file){
@@ -295,38 +298,43 @@ function toBase64(file){
   r.readAsDataURL(file);
  });
 }
-$("go").addEventListener("click",async()=>{
+window.movimovelStartImageTest=async function(){
  const status=$("status"),button=$("go"),result=$("result");
  result.style.display="none"; result.removeAttribute("src");
- if(!selectedFile){status.textContent="Escolha uma foto primeiro.";return}
- if(selectedFile.size>15*1024*1024){status.textContent="A foto ultrapassa 15 MB. Escolha uma menor.";return}
- button.disabled=true; status.textContent="Enviando a foto...";
+ if(!selectedFile){setStatus("Escolha uma foto primeiro.");return false}
+ if(selectedFile.size>15*1024*1024){setStatus("A foto ultrapassa 15 MB. Escolha uma menor.");return false}
+ button.disabled=true;
+ setStatus("Botão recebido. Preparando a foto...");
+ await waitPaint();
  try{
+  setStatus("Lendo a foto...");
+  await waitPaint();
   const imageBase64=await toBase64(selectedFile);
+  setStatus("Enviando a foto para o armazenamento...");
+  await waitPaint();
   const upload=await fetch("/upload-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageBase64,mimeType:selectedFile.type||"image/jpeg"})});
-  const up=await upload.json();
-  if(!upload.ok||!up.ok)throw new Error(up.error||"Falha ao enviar a foto.");
-  status.textContent="Gerando a edição com IA. Isso pode levar alguns instantes...";
+  const up=await upload.json().catch(()=>({}));
+  if(!upload.ok||!up.ok)throw new Error(up.error||("Falha ao enviar a foto. HTTP "+upload.status));
+  setStatus("Foto enviada. Pedindo a edição para a IA...");
+  await waitPaint();
   const edit=await fetch("/edit-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
     imageUrl:up.imageUrl,operation:$("operation").value,roomType:$("roomType").value,style:$("style").value,prompt:$("prompt").value
   })});
-  const out=await edit.json();
+  const out=await edit.json().catch(()=>({}));
   if(!edit.ok||!out.ok){
-    const failure=new Error(out.error||"Falha na edição.");
+    const failure=new Error(out.error||("Falha na edição. HTTP "+edit.status));
     failure.technicalError=out.technicalError||"";
     throw failure;
-   }
+  }
   result.src=out.imageUrl; result.style.display="block";
-  status.textContent="Imagem pronta.";
+  setStatus("Imagem pronta.");
  }catch(error){
   const publicMessage=error?.message||"Não foi possível concluir a edição.";
   const technical=error?.technicalError||"";
-  status.textContent=technical
-    ? publicMessage+"\n\nDetalhe técnico do teste:\n"+technical
-    : publicMessage;
- }
- finally{button.disabled=false}
-});
+  setStatus(technical?publicMessage+"\n\nDetalhe técnico do teste:\n"+technical:publicMessage);
+ }finally{button.disabled=false}
+ return false;
+};
 </script></body></html>`
 }
 
