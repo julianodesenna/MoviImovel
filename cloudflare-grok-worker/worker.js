@@ -133,7 +133,7 @@ async function runNanoBananaEditFromBytes({ env, imageBytes, mimeType, operation
 
   const prompt = buildImageEditPrompt(operation, customPrompt, roomType, style)
   const requestBody = {
-    model: "gemini-2.5-flash-image",
+    model: "gemini-3.1-flash-image",
     input: [
       { type: "text", text: prompt },
       { type: "image", data: bytesToBase64(bytes), mime_type: contentType }
@@ -162,7 +162,7 @@ async function runNanoBananaEditFromBytes({ env, imageBytes, mimeType, operation
   if (!env.VIDEOS) throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
   await env.VIDEOS.put(key, imageOutput, {
     httpMetadata: { contentType: generated.mimeType },
-    customMetadata: { origem: "Movimovel Nano Banana", operacao: operation }
+    customMetadata: { origem: "Movimovel Gemini 3.1 Flash Image", operacao: operation }
   })
   return { prompt, imageKey: key, mimeType: generated.mimeType, raw: result }
 }
@@ -742,7 +742,7 @@ export default {
         return json({
           ok: true,
           provider: "gemini",
-          model: "gemini-2.5-flash-image",
+          model: "gemini-3.1-flash-image",
           operation,
           imageKey: edited.imageKey,
           imageUrl: `${url.origin}/images/${edited.imageKey}`,
@@ -755,7 +755,7 @@ export default {
           ok: false,
           error: friendlyImageError(error),
           technicalError: error?.message || "Erro desconhecido ao editar a imagem.",
-          model: "gemini-2.5-flash-image"
+          model: "gemini-3.1-flash-image"
         }, 500)
       }
     }
@@ -801,7 +801,7 @@ export default {
         videosPermanentes: "GET /videos/{arquivo}",
         imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
-        observacao: "edit-image usa Gemini 2.5 Flash Image (Nano Banana)."
+        observacao: "edit-image usa Gemini 3.1 Flash Image (Gemini 3.1 Flash Image)."
       })
     }
 
