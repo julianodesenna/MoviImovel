@@ -116,33 +116,19 @@ function findGeneratedImage(result) {
   return null
 }
 
-async function runNanoBananaEdit({ env, imageKey, operation, customPrompt, roomType, style }) {
+async function runNanoBananaEditFromBytes({ env, imageBytes, mimeType, operation, customPrompt, roomType, style }) {
   if (!env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY não está configurada no Worker.")
   }
 
-  if (!imageKey || imageKey.includes("..")) {
-    throw new Error("A referência da imagem enviada é inválida.")
+  const bytes = imageBytes instanceof Uint8Array ? imageBytes : new Uint8Array(imageBytes)
+  const contentType = normalizeImageMimeType(mimeType)
+
+  if (bytes.byteLength < 100) {
+    throw new Error("A imagem enviada está vazia ou inválida.")
   }
-
-  if (!env.VIDEOS) {
-    throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
-  }
-
-  const source = await env.VIDEOS.get(imageKey)
-  if (!source) {
-    throw new Error("A imagem enviada não foi encontrada no armazenamento temporário.")
-  }
-
-  const contentType = normalizeImageMimeType(source.httpMetadata?.contentType || "image/jpeg")
-  const imageBuffer = await source.arrayBuffer()
-
-  if (imageBuffer.byteLength < 100) {
-    throw new Error("A imagem de origem está vazia ou inválida.")
-  }
-
-  if (imageBuffer.byteLength > 15 * 1024 * 1024) {
-    throw new Error("A imagem de origem excede 15 MB. Reduza o tamanho antes de editar.")
+  if (bytes.byteLength > 15 * 1024 * 1024) {
+    throw new Error("A imagem excede 15 MB. Reduza o tamanho antes de editar.")
   }
 
   const prompt = buildImageEditPrompt(operation, customPrompt, roomType, style)
@@ -150,58 +136,46 @@ async function runNanoBananaEdit({ env, imageKey, operation, customPrompt, roomT
     model: "gemini-2.5-flash-image",
     input: [
       { type: "text", text: prompt },
-      {
-        type: "image",
-        data: bytesToBase64(new Uint8Array(imageBuffer)),
-        mime_type: contentType
-      }
+      { type: "image", data: bytesToBase64(bytes), mime_type: contentType }
     ],
-    response_format: {
-      type: "image",
-      mime_type: "image/jpeg"
-    }
+    response_format: { type: "image", mime_type: "image/jpeg" }
   }
 
   const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "POST",
-    headers: {
-      "x-goog-api-key": env.GEMINI_API_KEY,
-      "Content-Type": "application/json"
-    },
+    headers: { "x-goog-api-key": env.GEMINI_API_KEY, "Content-Type": "application/json" },
     body: JSON.stringify(requestBody)
   })
-
   const result = await response.json().catch(() => null)
-
   if (!response.ok) {
     const detail = result?.error?.message || result?.message || `Gemini retornou HTTP ${response.status}.`
-    const code = result?.error?.status || result?.error?.code || ""
-    const raw = JSON.stringify(result || {}).slice(0, 1200)
-    throw new Error(`Gemini HTTP ${response.status}${code ? ` (${code})` : ""}: ${detail}${raw ? ` | Resposta: ${raw}` : ""}`)
+    const code = result?.error?.status || result?.error?.code || response.status
+    throw new Error(`[Gemini ${code}] ${detail}`)
   }
 
   const generated = findGeneratedImage(result)
   if (!generated?.data) {
     throw new Error("O Gemini respondeu, mas não retornou uma imagem editada.")
   }
-
-  const imageBytes = decodeBase64ToBytes(generated.data)
+  const imageOutput = decodeBase64ToBytes(generated.data)
   const key = createEditedImageKey()
-
-  await env.VIDEOS.put(key, imageBytes, {
+  if (!env.VIDEOS) throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
+  await env.VIDEOS.put(key, imageOutput, {
     httpMetadata: { contentType: generated.mimeType },
-    customMetadata: {
-      origem: "Movimovel Nano Banana",
-      operacao: operation
-    }
+    customMetadata: { origem: "Movimovel Nano Banana", operacao: operation }
   })
+  return { prompt, imageKey: key, mimeType: generated.mimeType, raw: result }
+}
 
-  return {
-    prompt,
-    imageKey: key,
-    mimeType: generated.mimeType,
-    raw: result
-  }
+async function runNanoBananaEdit({ env, imageUrl, operation, customPrompt, roomType, style }) {
+  const source = await fetch(imageUrl)
+  if (!source.ok) throw new Error(`Não foi possível baixar a imagem de origem. HTTP ${source.status}.`)
+  return runNanoBananaEditFromBytes({
+    env,
+    imageBytes: new Uint8Array(await source.arrayBuffer()),
+    mimeType: source.headers.get("content-type"),
+    operation, customPrompt, roomType, style
+  })
 }
 
 function json(data, status = 200) {
@@ -234,106 +208,15 @@ function friendlyImageError(error) {
   return "Não foi possível editar a imagem. Verifique sua conexão e tente novamente."
 }
 
-function imageTestPageHtml() {
-  return `<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Movimovel · Teste de imagem IA</title>
-<style>
-:root{color-scheme:light}
-*{box-sizing:border-box}
-body{margin:0;background:#ececef;color:#141414;font-family:Arial,sans-serif}
-main{max-width:680px;margin:0 auto;padding:24px 16px 40px}
-h1{font-size:28px;margin:0 0 8px}.sub{color:#555;line-height:1.45;margin:0 0 22px}
-.card{background:#fff;border:1px solid #d5d2ca;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 6px 20px #0000000d}
-label{display:block;font-weight:700;margin:0 0 8px}
-input,select,textarea,button{width:100%;font:inherit;border-radius:12px}
-input,select,textarea{border:1px solid #c9c6be;padding:13px;background:#fff}
-textarea{min-height:112px;resize:vertical}
-button{border:1px solid #b89349;background:#151515;color:white;padding:15px;font-weight:700;margin-top:14px}
-button:disabled{opacity:.55}
-#preview,#result{width:100%;border-radius:14px;margin-top:12px;display:none;max-height:480px;object-fit:contain;background:#f4f4f4}
-#status{white-space:pre-wrap;line-height:1.45;margin-top:14px;color:#333}
-.note{font-size:13px;color:#6a6255;line-height:1.4}
-</style>
-</head>
-<body><main>
-<h1>Teste de imagem IA</h1>
-<p class="sub">Envie uma foto, escolha a edição e gere uma prévia. A foto original é preservada.</p>
-<div class="card">
-<label>Foto do ambiente</label>
-<input id="file" type="file" accept="image/jpeg,image/png,image/webp">
-<img id="preview" alt="Prévia da foto">
-</div>
-<div class="card">
-<label>Tipo de edição</label>
-<select id="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select>
-<label style="margin-top:14px">Tipo de cômodo (opcional)</label>
-<input id="roomType" placeholder="Ex.: sala, quarto, cozinha">
-<label style="margin-top:14px">Estilo (opcional)</label>
-<input id="style" placeholder="Ex.: moderno, clean, madeira clara">
-<label style="margin-top:14px">Pedido adicional (opcional)</label>
-<textarea id="prompt" placeholder="Ex.: manter a janela e a iluminação exatamente como estão"></textarea>
-<button id="go">Gerar imagem</button>
-<div id="status"></div>
-<img id="result" alt="Imagem editada por IA">
-<p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar. Nesta página de teste, erros exibem um detalhe técnico para diagnóstico.</p>
-</div>
-</main>
-<script>
-const $=id=>document.getElementById(id);
-let selectedFile=null;
-$("file").addEventListener("change",e=>{
-  selectedFile=e.target.files?.[0]||null;
-  $("preview").style.display="none";
-  if(selectedFile){
-    $("preview").src=URL.createObjectURL(selectedFile);
-    $("preview").style.display="block";
-  }
-});
-function toBase64(file){
- return new Promise((resolve,reject)=>{
-  const r=new FileReader();
-  r.onerror=()=>reject(new Error("Não foi possível ler a foto."));
-  r.onload=()=>resolve(String(r.result).split(",")[1]||"");
-  r.readAsDataURL(file);
- });
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[char]))
 }
-$("go").addEventListener("click",async()=>{
- const status=$("status"),button=$("go"),result=$("result");
- result.style.display="none"; result.removeAttribute("src");
- if(!selectedFile){status.textContent="Escolha uma foto primeiro.";return}
- if(selectedFile.size>15*1024*1024){status.textContent="A foto ultrapassa 15 MB. Escolha uma menor.";return}
- button.disabled=true; status.textContent="Enviando a foto...";
- try{
-  const imageBase64=await toBase64(selectedFile);
-  const upload=await fetch("/upload-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageBase64,mimeType:selectedFile.type||"image/jpeg"})});
-  const up=await upload.json();
-  if(!upload.ok||!up.ok)throw new Error(up.error||"Falha ao enviar a foto.");
-  status.textContent="Gerando a edição com IA. Isso pode levar alguns instantes...";
-  const edit=await fetch("/edit-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-    imageKey:up.imageKey,operation:$("operation").value,roomType:$("roomType").value,style:$("style").value,prompt:$("prompt").value
-  })});
-  const out=await edit.json();
-  if(!edit.ok||!out.ok){
-    const failure=new Error(out.error||"Falha na edição.");
-    failure.technicalError=out.technicalError||"";
-    throw failure;
-   }
-  result.src=out.imageUrl; result.style.display="block";
-  status.textContent="Imagem pronta.";
- }catch(error){
-  const publicMessage=error?.message||"Não foi possível concluir a edição.";
-  const technical=error?.technicalError||"";
-  status.textContent=technical
-    ? publicMessage+"\n\nDetalhe técnico do teste:\n"+technical
-    : publicMessage;
- }
- finally{button.disabled=false}
-});
-</script></body></html>`
+
+function imageTestPageHtml(message = "", technical = "", imageUrl = "") {
+  const status = message ? `<div class="status ${imageUrl ? "ok" : "error"}"><strong>${escapeHtml(message)}</strong>${technical ? `<pre>${escapeHtml(technical)}</pre>` : ""}</div>` : ""
+  const result = imageUrl ? `<div class="card"><img class="result" src="${escapeHtml(imageUrl)}" alt="Imagem editada"></div>` : ""
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Movimovel · Teste de imagem IA</title><style>
+body{margin:0;background:#ececef;color:#151515;font:18px Arial,sans-serif}main{max-width:680px;margin:auto;padding:24px 16px 44px}h1{font-size:30px;margin:0 0 8px}.sub{color:#5c5c5c;line-height:1.45}.card{background:#fff;border:1px solid #d7d4cd;border-radius:18px;padding:18px;margin:16px 0;box-shadow:0 5px 18px #0000000d}label{display:block;font-weight:700;margin:14px 0 8px}input,select,textarea,button{box-sizing:border-box;width:100%;font:inherit;border-radius:12px}input,select,textarea{padding:14px;border:1px solid #c8c5be;background:#fff}textarea{min-height:120px}button{margin-top:18px;padding:16px;border:1px solid #b89349;background:#141414;color:#fff;font-weight:700}.status{padding:16px;border-radius:14px;line-height:1.45;margin:16px 0}.error{background:#fff0f0;color:#842b2b}.ok{background:#edf8ef;color:#205f2f}pre{margin:12px 0 0;white-space:pre-wrap;word-break:break-word;font:14px monospace}.note{color:#6b6256;font-size:14px;line-height:1.45}.result{width:100%;border-radius:14px;display:block}</style></head><body><main><h1>Teste de imagem IA</h1><p class="sub">Envie uma foto, escolha a edição e gere uma prévia. A foto original é preservada.</p>${status}${result}<form class="card" action="/test-image-submit" method="post" enctype="multipart/form-data"><label>Foto do ambiente</label><input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required><label>Tipo de edição</label><select name="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select><label>Tipo de cômodo (opcional)</label><input name="roomType" placeholder="Ex.: sala, quarto, cozinha"><label>Estilo (opcional)</label><input name="style" placeholder="Ex.: moderno, clean, madeira clara"><label>Pedido adicional (opcional)</label><textarea name="prompt" placeholder="Ex.: manter portas, janelas, piso e iluminação. Remover apenas os móveis."></textarea><button type="submit">Gerar imagem</button><p class="note">Após tocar em Gerar imagem, o navegador abrirá a resposta. Não depende de JavaScript.</p></form></main></body></html>`
 }
 
 function toNumber(value, fallback = 0) {
@@ -833,14 +716,14 @@ export default {
     if (request.method === "POST" && url.pathname === "/edit-image") {
       try {
         const body = await request.json()
-        const imageKey = String(body.imageKey || "").trim()
+        const imageUrl = String(body.imageUrl || "").trim()
         const operation = String(body.operation || "empty").trim().toLowerCase()
         const customPrompt = String(body.prompt || "").trim()
         const roomType = String(body.roomType || "").trim()
         const style = String(body.style || "").trim()
 
-        if (!imageKey || imageKey.includes("..")) {
-          return json({ ok: false, error: "imageKey da imagem enviada é obrigatório." }, 400)
+        if (!imageUrl.startsWith("https://") && !imageUrl.startsWith("http://")) {
+          return json({ ok: false, error: "imageUrl deve ser uma URL pública iniciando com https:// ou http://." }, 400)
         }
 
         if (!["empty", "furnish"].includes(operation)) {
@@ -849,7 +732,7 @@ export default {
 
         const edited = await runNanoBananaEdit({
           env,
-          imageKey,
+          imageUrl,
           operation,
           customPrompt,
           roomType,
@@ -877,6 +760,30 @@ export default {
       }
     }
 
+    if (request.method === "POST" && url.pathname === "/test-image-submit") {
+      try {
+        const form = await request.formData()
+        const photo = form.get("photo")
+        const operation = String(form.get("operation") || "empty").trim().toLowerCase()
+        const roomType = String(form.get("roomType") || "").trim()
+        const style = String(form.get("style") || "").trim()
+        const customPrompt = String(form.get("prompt") || "").trim()
+        if (!(photo instanceof File)) throw new Error("Escolha uma foto antes de gerar.")
+        if (!photo.type.startsWith("image/")) throw new Error("O arquivo escolhido não é uma imagem válida.")
+        if (!['empty','furnish'].includes(operation)) throw new Error("Tipo de edição inválido.")
+        const edited = await runNanoBananaEditFromBytes({
+          env,
+          imageBytes: new Uint8Array(await photo.arrayBuffer()),
+          mimeType: photo.type,
+          operation, customPrompt, roomType, style
+        })
+        return new Response(imageTestPageHtml("Imagem pronta.", "", `${url.origin}/images/${edited.imageKey}`), { headers: { "Content-Type":"text/html; charset=utf-8", "Cache-Control":"no-store" } })
+      } catch (error) {
+        const technical = error?.message || "Erro desconhecido ao editar imagem."
+        return new Response(imageTestPageHtml(friendlyImageError(error), technical), { status: 400, headers: { "Content-Type":"text/html; charset=utf-8", "Cache-Control":"no-store" } })
+      }
+    }
+
     if (request.method === "GET" && url.pathname === "/test-image") {
       return new Response(imageTestPageHtml(), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
@@ -890,7 +797,7 @@ export default {
         providersDisponiveis: ["grok", "pvideo", "auto", "preview", "gemini"],
         usoVideo: "POST /generate",
         usoImagem: "POST /edit-image",
-        testeImagem: "GET /test-image",
+        testeImagem: "GET /test-image (formulário sem JavaScript)",
         videosPermanentes: "GET /videos/{arquivo}",
         imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
