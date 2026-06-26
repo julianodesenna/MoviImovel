@@ -228,7 +228,7 @@ function friendlyImageError(error) {
   return "Não foi possível editar a imagem. Verifique sua conexão e tente novamente."
 }
 
-function imageTestPageHtml() {
+function imageTestPageHtml(resultHtml = "") {
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -236,106 +236,53 @@ function imageTestPageHtml() {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Movimovel · Teste de imagem IA</title>
 <style>
-:root{color-scheme:light}
-*{box-sizing:border-box}
-body{margin:0;background:#ececef;color:#141414;font-family:Arial,sans-serif}
-main{max-width:680px;margin:0 auto;padding:24px 16px 40px}
-h1{font-size:28px;margin:0 0 8px}.sub{color:#555;line-height:1.45;margin:0 0 22px}
-.card{background:#fff;border:1px solid #d5d2ca;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 6px 20px #0000000d}
-label{display:block;font-weight:700;margin:0 0 8px}
-input,select,textarea,button{width:100%;font:inherit;border-radius:12px}
-input,select,textarea{border:1px solid #c9c6be;padding:13px;background:#fff}
-textarea{min-height:112px;resize:vertical}
-button{border:1px solid #b89349;background:#151515;color:white;padding:15px;font-weight:700;margin-top:14px}
-button:disabled{opacity:.55}
-#preview,#result{width:100%;border-radius:14px;margin-top:12px;display:none;max-height:480px;object-fit:contain;background:#f4f4f4}
-#status{white-space:pre-wrap;line-height:1.45;margin-top:14px;color:#333}
+*{box-sizing:border-box} body{margin:0;background:#ececef;color:#141414;font-family:Arial,sans-serif}
+main{max-width:680px;margin:0 auto;padding:24px 16px 40px} h1{font-size:28px;margin:0 0 8px}.sub{color:#555;line-height:1.45}
+.card{background:#fff;border:1px solid #d5d2ca;border-radius:18px;padding:16px;margin:14px 0;box-shadow:0 6px 20px #0000000d}
+label{display:block;font-weight:700;margin:14px 0 8px} input,select,textarea,button{width:100%;font:inherit;border-radius:12px}
+input,select,textarea{border:1px solid #c9c6be;padding:13px;background:#fff} textarea{min-height:108px}
+button{border:1px solid #b89349;background:#151515;color:#fff;padding:15px;font-weight:700;margin-top:16px}
+#loading{display:none;margin-top:14px;padding:12px;border-radius:10px;background:#f6f1e6;color:#53421e}
+.result-ok{padding:14px;border-radius:12px;background:#edf8ef;color:#1d5f2b;white-space:pre-wrap;line-height:1.45}
+.result-error{padding:14px;border-radius:12px;background:#fff0f0;color:#8d2525;white-space:pre-wrap;line-height:1.45}
+.result-img{width:100%;border-radius:14px;margin-top:14px}
 .note{font-size:13px;color:#6a6255;line-height:1.4}
 </style>
 </head>
 <body><main>
 <h1>Teste de imagem IA</h1>
 <p class="sub">Envie uma foto, escolha a edição e gere uma prévia. A foto original é preservada.</p>
+${resultHtml}
+<form id="imageForm" method="POST" action="/test-image-run" enctype="multipart/form-data">
 <div class="card">
 <label>Foto do ambiente</label>
-<input id="file" type="file" accept="image/jpeg,image/png,image/webp">
-<img id="preview" alt="Prévia da foto">
-</div>
-<div class="card">
+<input name="image" type="file" accept="image/jpeg,image/png,image/webp" required>
 <label>Tipo de edição</label>
-<select id="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select>
-<label style="margin-top:14px">Tipo de cômodo (opcional)</label>
-<input id="roomType" placeholder="Ex.: sala, quarto, cozinha">
-<label style="margin-top:14px">Estilo (opcional)</label>
-<input id="style" placeholder="Ex.: moderno, clean, madeira clara">
-<label style="margin-top:14px">Pedido adicional (opcional)</label>
-<textarea id="prompt" placeholder="Ex.: manter a janela e a iluminação exatamente como estão"></textarea>
-<button id="go" type="button" onclick="window.movimovelStartImageTest()">Gerar imagem</button>
-<div id="status"></div>
-<img id="result" alt="Imagem editada por IA">
-<p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar. Nesta página de teste, erros exibem um detalhe técnico para diagnóstico.</p>
+<select name="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select>
+<label>Tipo de cômodo (opcional)</label>
+<input name="roomType" placeholder="Ex.: sala, quarto, cozinha">
+<label>Estilo (opcional)</label>
+<input name="style" placeholder="Ex.: moderno, clean, madeira clara">
+<label>Pedido adicional (opcional)</label>
+<textarea name="prompt" placeholder="Ex.: manter portas, janelas e iluminação exatamente como estão"></textarea>
+<button id="go" type="submit">Gerar imagem</button>
+<div id="loading">Enviando a foto e pedindo a edição para a IA. Esta página pode levar alguns segundos.</div>
+<p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar.</p>
 </div>
-</main>
+</form>
 <script>
-const $=id=>document.getElementById(id);
-let selectedFile=null;
-const waitPaint=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-function setStatus(message){$("status").textContent=message;}
-$("file").addEventListener("change",e=>{
-  selectedFile=e.target.files?.[0]||null;
-  $("preview").style.display="none";
-  if(selectedFile){
-    $("preview").src=URL.createObjectURL(selectedFile);
-    $("preview").style.display="block";
-    setStatus("Foto selecionada. Toque em Gerar imagem.");
-  }
+document.getElementById("imageForm").addEventListener("submit", function(){
+ const b=document.getElementById("go"); b.disabled=true; b.textContent="Enviando...";
+ document.getElementById("loading").style.display="block";
 });
-function toBase64(file){
- return new Promise((resolve,reject)=>{
-  const r=new FileReader();
-  r.onerror=()=>reject(new Error("Não foi possível ler a foto."));
-  r.onload=()=>resolve(String(r.result).split(",")[1]||"");
-  r.readAsDataURL(file);
- });
+</script>
+</main></body></html>`
 }
-window.movimovelStartImageTest=async function(){
- const status=$("status"),button=$("go"),result=$("result");
- result.style.display="none"; result.removeAttribute("src");
- if(!selectedFile){setStatus("Escolha uma foto primeiro.");return false}
- if(selectedFile.size>15*1024*1024){setStatus("A foto ultrapassa 15 MB. Escolha uma menor.");return false}
- button.disabled=true;
- setStatus("Botão recebido. Preparando a foto...");
- await waitPaint();
- try{
-  setStatus("Lendo a foto...");
-  await waitPaint();
-  const imageBase64=await toBase64(selectedFile);
-  setStatus("Enviando a foto para o armazenamento...");
-  await waitPaint();
-  const upload=await fetch("/upload-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageBase64,mimeType:selectedFile.type||"image/jpeg"})});
-  const up=await upload.json().catch(()=>({}));
-  if(!upload.ok||!up.ok)throw new Error(up.error||("Falha ao enviar a foto. HTTP "+upload.status));
-  setStatus("Foto enviada. Pedindo a edição para a IA...");
-  await waitPaint();
-  const edit=await fetch("/edit-image",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-    imageUrl:up.imageUrl,operation:$("operation").value,roomType:$("roomType").value,style:$("style").value,prompt:$("prompt").value
-  })});
-  const out=await edit.json().catch(()=>({}));
-  if(!edit.ok||!out.ok){
-    const failure=new Error(out.error||("Falha na edição. HTTP "+edit.status));
-    failure.technicalError=out.technicalError||"";
-    throw failure;
-  }
-  result.src=out.imageUrl; result.style.display="block";
-  setStatus("Imagem pronta.");
- }catch(error){
-  const publicMessage=error?.message||"Não foi possível concluir a edição.";
-  const technical=error?.technicalError||"";
-  setStatus(technical?publicMessage+"\n\nDetalhe técnico do teste:\n"+technical:publicMessage);
- }finally{button.disabled=false}
- return false;
-};
-</script></body></html>`
+
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, char => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[char]))
 }
 
 function toNumber(value, fallback = 0) {
@@ -879,6 +826,61 @@ export default {
       }
     }
 
+    if (request.method === "POST" && url.pathname === "/test-image-run") {
+      try {
+        const form = await request.formData()
+        const image = form.get("image")
+        const operation = String(form.get("operation") || "empty").trim().toLowerCase()
+        const roomType = String(form.get("roomType") || "").trim()
+        const style = String(form.get("style") || "").trim()
+        const customPrompt = String(form.get("prompt") || "").trim()
+
+        if (!(image instanceof File) || image.size < 100) {
+          return new Response(imageTestPageHtml('<div class="result-error">Escolha uma foto válida antes de gerar.</div>'), {
+            status: 400, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
+          })
+        }
+        if (image.size > 15 * 1024 * 1024) {
+          return new Response(imageTestPageHtml('<div class="result-error">A foto ultrapassa 15 MB. Escolha uma imagem menor.</div>'), {
+            status: 413, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
+          })
+        }
+        if (!["empty", "furnish"].includes(operation)) {
+          throw new Error("Tipo de edição inválido.")
+        }
+
+        const mimeType = normalizeImageMimeType(image.type)
+        const imageBytes = new Uint8Array(await image.arrayBuffer())
+        const uploadKey = createUploadedImageKey()
+
+        await env.VIDEOS.put(uploadKey, imageBytes, {
+          httpMetadata: { contentType: mimeType },
+          customMetadata: { origem: "Página de teste Movimovel" }
+        })
+
+        const edited = await runNanoBananaEdit({
+          env,
+          imageUrl: `${url.origin}/images/${uploadKey}`,
+          operation,
+          customPrompt,
+          roomType,
+          style
+        })
+
+        const success = `<div class="card"><div class="result-ok">Imagem gerada com sucesso.</div><img class="result-img" src="${escapeHtml(`${url.origin}/images/${edited.imageKey}`)}" alt="Imagem editada por IA"><p class="note">Foto original preservada. Resultado: imagem ilustrativa editada por IA.</p></div>`
+        return new Response(imageTestPageHtml(success), {
+          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
+        })
+      } catch (error) {
+        const message = friendlyImageError(error)
+        const technical = escapeHtml(error?.message || "Erro desconhecido.")
+        const failure = `<div class="card"><div class="result-error">${escapeHtml(message)}\n\nDetalhe técnico do teste:\n${technical}</div></div>`
+        return new Response(imageTestPageHtml(failure), {
+          status: 500, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
+        })
+      }
+    }
+
     if (request.method === "GET" && url.pathname === "/test-image") {
       return new Response(imageTestPageHtml(), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }
@@ -892,7 +894,7 @@ export default {
         providersDisponiveis: ["grok", "pvideo", "auto", "preview", "gemini"],
         usoVideo: "POST /generate",
         usoImagem: "POST /edit-image",
-        testeImagem: "GET /test-image",
+        testeImagem: "GET /test-image · POST /test-image-run",
         videosPermanentes: "GET /videos/{arquivo}",
         imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
