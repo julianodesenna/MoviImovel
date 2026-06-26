@@ -121,13 +121,17 @@ async function runNanoBananaEdit({ env, imageKey, operation, customPrompt, roomT
     throw new Error("GEMINI_API_KEY não está configurada no Worker.")
   }
 
+  if (!imageKey || imageKey.includes("..")) {
+    throw new Error("A referência da imagem enviada é inválida.")
+  }
+
   if (!env.VIDEOS) {
     throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
   }
 
   const source = await env.VIDEOS.get(imageKey)
   if (!source) {
-    throw new Error("Não foi possível localizar a imagem enviada no armazenamento.")
+    throw new Error("A imagem enviada não foi encontrada no armazenamento temporário.")
   }
 
   const contentType = normalizeImageMimeType(source.httpMetadata?.contentType || "image/jpeg")
@@ -171,7 +175,9 @@ async function runNanoBananaEdit({ env, imageKey, operation, customPrompt, roomT
 
   if (!response.ok) {
     const detail = result?.error?.message || result?.message || `Gemini retornou HTTP ${response.status}.`
-    throw new Error(detail)
+    const code = result?.error?.status || result?.error?.code || ""
+    const raw = JSON.stringify(result || {}).slice(0, 1200)
+    throw new Error(`Gemini HTTP ${response.status}${code ? ` (${code})` : ""}: ${detail}${raw ? ` | Resposta: ${raw}` : ""}`)
   }
 
   const generated = findGeneratedImage(result)
@@ -273,7 +279,7 @@ button:disabled{opacity:.55}
 <button id="go">Gerar imagem</button>
 <div id="status"></div>
 <img id="result" alt="Imagem editada por IA">
-<p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar.</p>
+<p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar. Nesta página de teste, erros exibem um detalhe técnico para diagnóstico.</p>
 </div>
 </main>
 <script>
@@ -311,10 +317,20 @@ $("go").addEventListener("click",async()=>{
     imageKey:up.imageKey,operation:$("operation").value,roomType:$("roomType").value,style:$("style").value,prompt:$("prompt").value
   })});
   const out=await edit.json();
-  if(!edit.ok||!out.ok)throw new Error(out.error||"Falha na edição.");
+  if(!edit.ok||!out.ok){
+    const failure=new Error(out.error||"Falha na edição.");
+    failure.technicalError=out.technicalError||"";
+    throw failure;
+   }
   result.src=out.imageUrl; result.style.display="block";
   status.textContent="Imagem pronta.";
- }catch(error){status.textContent=error?.message||"Não foi possível concluir a edição."}
+ }catch(error){
+  const publicMessage=error?.message||"Não foi possível concluir a edição.";
+  const technical=error?.technicalError||"";
+  status.textContent=technical
+    ? publicMessage+"\n\nDetalhe técnico do teste:\n"+technical
+    : publicMessage;
+ }
  finally{button.disabled=false}
 });
 </script></body></html>`
@@ -823,8 +839,8 @@ export default {
         const roomType = String(body.roomType || "").trim()
         const style = String(body.style || "").trim()
 
-        if (!imageKey || !imageKey.startsWith("uploads/") || imageKey.includes("..")) {
-          return json({ ok: false, error: "imageKey inválida para edição." }, 400)
+        if (!imageKey || imageKey.includes("..")) {
+          return json({ ok: false, error: "imageKey da imagem enviada é obrigatório." }, 400)
         }
 
         if (!["empty", "furnish"].includes(operation)) {
