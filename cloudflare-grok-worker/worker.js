@@ -273,7 +273,7 @@ button:disabled{opacity:.55}
 <button id="go">Gerar imagem</button>
 <div id="status"></div>
 <img id="result" alt="Imagem editada por IA">
-<p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar.</p>
+<p class="note">Imagem ilustrativa editada por IA. Revise antes de anunciar ou publicar. Nesta página de teste, erros exibem um detalhe técnico para diagnóstico.</p>
 </div>
 </main>
 <script>
@@ -311,10 +311,20 @@ $("go").addEventListener("click",async()=>{
     imageUrl:up.imageUrl,operation:$("operation").value,roomType:$("roomType").value,style:$("style").value,prompt:$("prompt").value
   })});
   const out=await edit.json();
-  if(!edit.ok||!out.ok)throw new Error(out.error||"Falha na edição.");
+  if(!edit.ok||!out.ok){
+    const failure=new Error(out.error||"Falha na edição.");
+    failure.technicalError=out.technicalError||"";
+    throw failure;
+   }
   result.src=out.imageUrl; result.style.display="block";
   status.textContent="Imagem pronta.";
- }catch(error){status.textContent=error?.message||"Não foi possível concluir a edição."}
+ }catch(error){
+  const publicMessage=error?.message||"Não foi possível concluir a edição.";
+  const technical=error?.technicalError||"";
+  status.textContent=technical
+    ? publicMessage+"\n\nDetalhe técnico do teste:\n"+technical
+    : publicMessage;
+ }
  finally{button.disabled=false}
 });
 </script></body></html>`
