@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.media.MediaCodec
 import android.media.MediaExtractor
@@ -20,12 +21,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,7 +57,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -86,22 +83,6 @@ private const val MOVIIMOVEL_VIDEO_WORKER =
     "https://moviimovel-grok-worker.julianoocorretor.workers.dev"
 
 private const val MAX_FOTOS_POR_VIDEO = 5
-
-private object PremiumUi {
-    val Fundo = Color(0xFFE6E7E9)
-    val FundoSecundario = Color(0xFFF1F1F2)
-    val Card = Color(0xFFF8F8F7)
-    val CardInterno = Color(0xFFF4F4F3)
-    val Texto = Color(0xFF161616)
-    val TextoSuave = Color(0xFF5E5E5E)
-    val PretoPremium = Color(0xFF111111)
-    val PretoPremium2 = Color(0xFF1E1E1E)
-    val Dourado = Color(0xFFB89349)
-    val DouradoClaro = Color(0xFFE7D4A7)
-    val Borda = Color(0xFFD8D5CF)
-    val BordaEscura = Color(0xFF2D2D2D)
-    val VermelhoSuave = Color(0xFF9D5E5E)
-}
 
 data class MovimentoVideo(
     val nome: String,
@@ -178,6 +159,8 @@ fun MoviImovelApp() {
             "Selecione uma foto ou várias fotos para criar as cenas."
         )
     }
+
+    var abrirImagemFlux by remember { mutableStateOf(false) }
 
     var mostrarProgressoDownload by remember {
         mutableStateOf(false)
@@ -266,6 +249,13 @@ fun MoviImovelApp() {
             mensagem =
                 "Foto pronta. Escolha movimento, duração e revise o prompt."
         }
+    }
+
+    if (abrirImagemFlux) {
+        TelaImagemFlux(
+            onVoltar = { abrirImagemFlux = false }
+        )
+        return
     }
 
     val cenaSelecionada = cenas.firstOrNull {
@@ -553,7 +543,7 @@ fun MoviImovelApp() {
     MaterialTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = PremiumUi.Fundo
+            color = Color(0xFF0E1316)
         ) {
             Column(
                 modifier = Modifier
@@ -564,64 +554,18 @@ fun MoviImovelApp() {
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Card(
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = PremiumUi.Card
-                        ),
-                        border = BorderStroke(1.dp, PremiumUi.DouradoClaro)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(58.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "M",
-                                color = PremiumUi.Texto,
-                                fontSize = 28.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "Movitmovel Vídeo IA",
-                        color = PremiumUi.Texto,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    Card(
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = PremiumUi.Card
-                        ),
-                        border = BorderStroke(1.dp, PremiumUi.DouradoClaro)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(50.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "♛",
-                                color = PremiumUi.Dourado,
-                                fontSize = 22.sp
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = "MoviImovel Vídeo IA",
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
 
                 if (gerandoVideo) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = PremiumUi.Card
+                            containerColor = Color(0xFF1C292F)
                         ),
                         shape = RoundedCornerShape(14.dp)
                     ) {
@@ -631,30 +575,30 @@ fun MoviImovelApp() {
                         ) {
                             Text(
                                 text = "PROGRESSO REAL DA GERAÇÃO",
-                                color = PremiumUi.Texto,
+                                color = Color(0xFFF2D8AF),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
 
                             Text(
                                 text = "Vídeo $cenaAtualGeracao de ${cenas.size}",
-                                color = PremiumUi.Texto,
+                                color = Color.White,
                                 fontWeight = FontWeight.Bold
                             )
 
                             Text(
                                 text = "Progresso geral real: $progressoGeralReal%",
-                                color = PremiumUi.Texto
+                                color = Color.White
                             )
 
                             Text(
                                 text = "Tempo decorrido: ${formatarTempoDecorrido(segundosDecorridos)}",
-                                color = PremiumUi.TextoSuave
+                                color = Color(0xFFB8C7CE)
                             )
 
                             Text(
                                 text = "O status da IA aparece abaixo. A porcentagem só sobe quando cada vídeo termina.",
-                                color = PremiumUi.TextoSuave,
+                                color = Color(0xFFB8C7CE),
                                 fontSize = 12.sp
                             )
                         }
@@ -664,9 +608,19 @@ fun MoviImovelApp() {
                 Text(
                     text =
                         "Cada foto vira uma cena independente. O aplicativo junta tudo e salva o resultado final automaticamente.",
-                    color = PremiumUi.TextoSuave,
+                    color = Color(0xFFC6D0D6),
                     fontSize = 14.sp
                 )
+
+                Button(
+                    onClick = { abrirImagemFlux = true },
+                    enabled = !gerandoVideo,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF875E2A)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Editar imagem com IA (FLUX)", color = Color.White, fontWeight = FontWeight.Bold)
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -680,17 +634,15 @@ fun MoviImovelApp() {
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp),
-                        border = BorderStroke(1.dp, PremiumUi.Borda),
-                        contentPadding = PaddingValues(0.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = PremiumUi.Card
+                            containerColor = Color(0xFF284B63)
                         ),
-                        shape = RoundedCornerShape(18.dp)
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         Text(
                             text = "Uma foto",
-                            color = PremiumUi.Texto,
-                            fontWeight = FontWeight.SemiBold
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
                         )
                     }
 
@@ -702,16 +654,15 @@ fun MoviImovelApp() {
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp),
-                        border = BorderStroke(1.dp, PremiumUi.Dourado),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = PremiumUi.PretoPremium
+                            containerColor = Color(0xFF236D52)
                         ),
-                        shape = RoundedCornerShape(18.dp)
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         Text(
                             text = "Várias fotos",
                             color = Color.White,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -738,11 +689,10 @@ fun MoviImovelApp() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp),
-                        border = BorderStroke(1.dp, PremiumUi.Dourado),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = PremiumUi.PretoPremium
+                            containerColor = Color(0xFF304D5B)
                         ),
-                        shape = RoundedCornerShape(18.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
                             text =
@@ -754,7 +704,7 @@ fun MoviImovelApp() {
 
                     Text(
                         text = "Cenas do vídeo",
-                        color = PremiumUi.Texto,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
@@ -812,7 +762,7 @@ fun MoviImovelApp() {
 
                     Text(
                         text = "Qualidade",
-                        color = PremiumUi.Texto,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
 
@@ -826,7 +776,7 @@ fun MoviImovelApp() {
 
                     Text(
                         text = textoQualidade(modoQualidade),
-                        color = PremiumUi.TextoSuave,
+                        color = Color(0xFFC6D0D6),
                         fontSize = 13.sp
                     )
 
@@ -849,8 +799,8 @@ fun MoviImovelApp() {
                             .fillMaxWidth()
                             .height(56.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = PremiumUi.PretoPremium,
-                            disabledContainerColor = Color(0xFF707070)
+                            containerColor = Color(0xFFD46A27),
+                            disabledContainerColor = Color(0xFF42342C)
                         ),
                         shape = RoundedCornerShape(16.dp)
                     ) {
@@ -884,8 +834,8 @@ fun MoviImovelApp() {
                         .fillMaxWidth()
                         .height(46.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = PremiumUi.PretoPremium,
-                        disabledContainerColor = Color(0xFF707070)
+                        containerColor = Color(0xFF5A3F8C),
+                        disabledContainerColor = Color(0xFF20282E)
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -900,7 +850,7 @@ fun MoviImovelApp() {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = PremiumUi.Card
+                            containerColor = Color(0xFF243640)
                         ),
                         shape = RoundedCornerShape(14.dp)
                     ) {
@@ -910,7 +860,7 @@ fun MoviImovelApp() {
                         ) {
                             Text(
                                 text = cenaDownloadAtual,
-                                color = PremiumUi.Texto,
+                                color = Color.White,
                                 fontWeight = FontWeight.Bold
                             )
 
@@ -926,8 +876,8 @@ fun MoviImovelApp() {
                                 LinearProgressIndicator(
                                     progress = progresso,
                                     modifier = Modifier.fillMaxWidth(),
-                                    color = PremiumUi.Dourado,
-                                    trackColor = PremiumUi.Borda
+                                    color = Color(0xFFFFA45B),
+                                    trackColor = Color(0xFF4C6470)
                                 )
 
                                 Text(
@@ -936,19 +886,19 @@ fun MoviImovelApp() {
                                             formatarBytes(bytesBaixados) +
                                             " de " +
                                             formatarBytes(bytesTotais),
-                                    color = PremiumUi.TextoSuave,
+                                    color = Color(0xFFD9E6EB),
                                     fontSize = 13.sp
                                 )
                             } else {
                                 LinearProgressIndicator(
                                     modifier = Modifier.fillMaxWidth(),
-                                    color = PremiumUi.Dourado,
-                                    trackColor = PremiumUi.Borda
+                                    color = Color(0xFFFFA45B),
+                                    trackColor = Color(0xFF4C6470)
                                 )
 
                                 Text(
                                     text = "Recebendo o vídeo...",
-                                    color = PremiumUi.TextoSuave,
+                                    color = Color(0xFFD9E6EB),
                                     fontSize = 13.sp
                                 )
                             }
@@ -959,13 +909,13 @@ fun MoviImovelApp() {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = PremiumUi.Card
+                        containerColor = Color(0xFF172228)
                     ),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text(
                         text = mensagem,
-                        color = PremiumUi.Texto,
+                        color = Color(0xFFF2D8AF),
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
@@ -1001,10 +951,9 @@ private fun CardCena(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = PremiumUi.Card
+            containerColor = Color(0xFF182126)
         ),
-        border = BorderStroke(1.dp, PremiumUi.Borda),
-        shape = RoundedCornerShape(22.dp)
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -1035,13 +984,13 @@ private fun CardCena(
                 ) {
                     Text(
                         text = "$numero. ${cena.nome}",
-                        color = PremiumUi.Texto,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
 
                     Text(
                         text = "${cena.duracao} segundos",
-                        color = PremiumUi.TextoSuave,
+                        color = Color(0xFFC6D0D6),
                         fontSize = 13.sp
                     )
                 }
@@ -1052,14 +1001,14 @@ private fun CardCena(
                 ) {
                     Text(
                         text = "Remover",
-                        color = PremiumUi.VermelhoSuave
+                        color = Color(0xFFFFA5A5)
                     )
                 }
             }
 
             Text(
                 text = "Movimento: ${cena.movimento.nome}",
-                color = PremiumUi.Dourado,
+                color = Color(0xFFFFC58B),
                 fontWeight = FontWeight.SemiBold
             )
 
@@ -1068,23 +1017,22 @@ private fun CardCena(
                 onClick = onAlterarMovimento,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
-                border = BorderStroke(1.dp, PremiumUi.BordaEscura),
+                    .height(44.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = PremiumUi.Card
+                    containerColor = Color(0xFF304D5B)
                 ),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Text(
                     text = "Escolher movimento",
-                    color = PremiumUi.Texto,
+                    color = Color.White,
                     fontWeight = FontWeight.SemiBold
                 )
             }
 
             Text(
                 text = "Prompt desta cena",
-                color = PremiumUi.Texto,
+                color = Color.White,
                 fontWeight = FontWeight.Bold
             )
 
@@ -1110,13 +1058,13 @@ private fun CardCena(
             ) {
                 Text(
                     text = "Restaurar prompt automático",
-                    color = PremiumUi.Dourado
+                    color = Color(0xFFFFC58B)
                 )
             }
 
             Text(
                 text = "Duração",
-                color = PremiumUi.Texto,
+                color = Color.White,
                 fontWeight = FontWeight.Bold
             )
 
@@ -1136,16 +1084,16 @@ private fun CardCena(
                         colors = ButtonDefaults.buttonColors(
                             containerColor =
                                 if (cena.duracao == segundos) {
-                                    PremiumUi.PretoPremium
+                                    Color(0xFFD46A27)
                                 } else {
-                                    PremiumUi.FundoSecundario
+                                    Color(0xFF304D5B)
                                 }
                         ),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text(
                             text = "${segundos}s",
-                            color = if (cena.duracao == segundos) Color.White else PremiumUi.Texto,
+                            color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -1166,7 +1114,7 @@ private fun TelaEscolherMovimento(
     MaterialTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = PremiumUi.Fundo
+            color = Color(0xFF0E1316)
         ) {
             Column(
                 modifier = Modifier
@@ -1182,13 +1130,13 @@ private fun TelaEscolherMovimento(
                 ) {
                     Text(
                         text = "← Voltar para as cenas",
-                        color = PremiumUi.Dourado
+                        color = Color(0xFFFFC58B)
                     )
                 }
 
                 Text(
                     text = "Escolher movimento",
-                    color = PremiumUi.Texto,
+                    color = Color.White,
                     fontSize = 23.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1196,13 +1144,13 @@ private fun TelaEscolherMovimento(
                 Text(
                     text =
                         "${cena.nome}. Ao escolher outro movimento, o prompt automático correspondente será restaurado. Depois ele continuará editável.",
-                    color = PremiumUi.TextoSuave,
+                    color = Color(0xFFC6D0D6),
                     fontSize = 14.sp
                 )
 
                 Text(
                     text = "RECOMENDADOS PARA IMÓVEIS",
-                    color = PremiumUi.Dourado,
+                    color = Color(0xFFFFC58B),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(
@@ -1224,7 +1172,7 @@ private fun TelaEscolherMovimento(
 
                 Text(
                     text = "TODOS OS MOVIMENTOS",
-                    color = PremiumUi.Dourado,
+                    color = Color(0xFFFFC58B),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(
@@ -1259,9 +1207,9 @@ private fun MovimentoLinha(
         colors = CardDefaults.cardColors(
             containerColor =
                 if (selecionado) {
-                    PremiumUi.PretoPremium
+                    Color(0xFF3B5D70)
                 } else {
-                    PremiumUi.Card
+                    Color(0xFF182126)
                 }
         ),
         shape = RoundedCornerShape(12.dp)
@@ -1272,7 +1220,7 @@ private fun MovimentoLinha(
         ) {
             Text(
                 text = movimento.nome,
-                color = if (selecionado) Color.White else PremiumUi.Texto,
+                color = Color.White,
                 textAlign = TextAlign.Start,
                 fontWeight =
                     if (selecionado) {
@@ -1318,16 +1266,16 @@ private fun QualidadeSelector(
                         colors = ButtonDefaults.buttonColors(
                             containerColor =
                                 if (selecionada == qualidade) {
-                                    PremiumUi.PretoPremium
+                                    Color(0xFF6F4C9B)
                                 } else {
-                                    PremiumUi.FundoSecundario
+                                    Color(0xFF304D5B)
                                 }
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
                             text = qualidade,
-                            color = if (selecionada == qualidade) Color.White else PremiumUi.Texto,
+                            color = Color.White,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center
@@ -1342,13 +1290,13 @@ private fun QualidadeSelector(
 @Composable
 private fun campoCores() =
     OutlinedTextFieldDefaults.colors(
-        focusedTextColor = PremiumUi.Texto,
-        unfocusedTextColor = PremiumUi.Texto,
-        focusedBorderColor = PremiumUi.Dourado,
-        unfocusedBorderColor = PremiumUi.Borda,
-        focusedLabelColor = PremiumUi.Dourado,
-        unfocusedLabelColor = PremiumUi.TextoSuave,
-        cursorColor = PremiumUi.Dourado
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color(0xFFE1E8EC),
+        focusedBorderColor = Color(0xFFFFA45B),
+        unfocusedBorderColor = Color(0xFF74818A),
+        focusedLabelColor = Color(0xFFFFC58B),
+        unfocusedLabelColor = Color(0xFFBBC7CD),
+        cursorColor = Color(0xFFFFA45B)
     )
 
 private fun nomesMovimentosRecomendados() = setOf(
@@ -2418,4 +2366,204 @@ private fun carregarBitmapAltaQualidade(
     } catch (_: Exception) {
         null
     }
+}
+
+
+private data class ResultadoImagemFlux(
+    val imageUrl: String,
+    val model: String
+)
+
+@Composable
+private fun TelaImagemFlux(onVoltar: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var fotoUri by remember { mutableStateOf<Uri?>(null) }
+    var modelo by remember { mutableStateOf("klein4b") }
+    var operacao by remember { mutableStateOf("empty") }
+    var pedido by remember { mutableStateOf("") }
+    var gerando by remember { mutableStateOf(false) }
+    var mensagem by remember { mutableStateOf("Escolha uma foto para editar.") }
+    var resultado by remember { mutableStateOf<Bitmap?>(null) }
+
+    val seletor = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            fotoUri = uri
+            resultado = null
+            mensagem = "Foto selecionada. Escolha o modelo e gere a imagem."
+        }
+    }
+
+    MaterialTheme {
+        Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0E1316)) {
+            Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text("Imagem IA", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "Use a mesma foto e compare os dois modelos. FLUX.2 klein 4B é econômico; FLUX.2 dev prioriza qualidade.",
+                    color = Color(0xFFC6D0D6), fontSize = 14.sp
+                )
+                Button(
+                    onClick = { seletor.launch("image/*") },
+                    enabled = !gerando,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF284B63)),
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text(if (fotoUri == null) "Escolher foto" else "Trocar foto", color = Color.White, fontWeight = FontWeight.Bold) }
+
+                Text("Modelo", color = Color.White, fontWeight = FontWeight.Bold)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { modelo = "klein4b" }, enabled = !gerando,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (modelo == "klein4b") Color(0xFF236D52) else Color(0xFF2D3B42))
+                    ) { Text("FLUX klein 4B", color = Color.White, fontSize = 12.sp) }
+                    Button(
+                        onClick = { modelo = "dev" }, enabled = !gerando,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (modelo == "dev") Color(0xFFD46A27) else Color(0xFF2D3B42))
+                    ) { Text("FLUX dev", color = Color.White, fontSize = 12.sp) }
+                }
+
+                Text("Ação", color = Color.White, fontWeight = FontWeight.Bold)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { operacao = "empty" }, enabled = !gerando,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (operacao == "empty") Color(0xFF875E2A) else Color(0xFF2D3B42))
+                    ) { Text("Esvaziar", color = Color.White) }
+                    Button(
+                        onClick = { operacao = "furnish" }, enabled = !gerando,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (operacao == "furnish") Color(0xFF875E2A) else Color(0xFF2D3B42))
+                    ) { Text("Mobiliar", color = Color.White) }
+                }
+
+                OutlinedTextField(
+                    value = pedido,
+                    onValueChange = { pedido = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Pedido adicional") },
+                    placeholder = { Text("Ex.: preservar portas, janelas, paredes e piso.") },
+                    minLines = 4,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFD6B46A), unfocusedBorderColor = Color(0xFF839099),
+                        focusedLabelColor = Color(0xFFD6B46A), unfocusedLabelColor = Color(0xFFC6D0D6)
+                    )
+                )
+
+                Button(
+                    onClick = {
+                        val uri = fotoUri ?: run { mensagem = "Escolha uma foto antes de gerar."; return@Button }
+                        gerando = true
+                        resultado = null
+                        mensagem = "Enviando foto para o Worker..."
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val bitmap = carregarBitmapAltaQualidade(context, uri.toString())
+                                    ?: throw IllegalStateException("Não foi possível abrir a foto.")
+                                withContext(Dispatchers.Main) { mensagem = "Gerando com ${if (modelo == "dev") "FLUX.2 dev" else "FLUX.2 klein 4B"}..." }
+                                val resposta = editarImagemFlux(bitmap, modelo, operacao, pedido)
+                                val imagem = baixarBitmapDaUrl(resposta.imageUrl)
+                                    ?: throw IllegalStateException("A IA gerou a imagem, mas não foi possível baixá-la.")
+                                withContext(Dispatchers.Main) {
+                                    resultado = imagem
+                                    mensagem = "Imagem pronta com ${resposta.model}. Revise portas, janelas e estrutura antes de usar."
+                                    gerando = false
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    mensagem = "Não foi possível gerar: ${e.message ?: "erro sem detalhe"}"
+                                    gerando = false
+                                }
+                            }
+                        }
+                    },
+                    enabled = fotoUri != null && !gerando,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD46A27), disabledContainerColor = Color(0xFF42342C)),
+                    shape = RoundedCornerShape(16.dp)
+                ) { Text(if (gerando) "Gerando imagem..." else "Gerar imagem", color = Color.White, fontWeight = FontWeight.Bold) }
+
+                Text(mensagem, color = Color(0xFFC6D0D6), fontSize = 14.sp)
+                resultado?.let { bitmap ->
+                    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1C292F)), shape = RoundedCornerShape(14.dp)) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(), contentDescription = "Resultado da imagem IA",
+                            modifier = Modifier.fillMaxWidth().padding(10.dp).clip(RoundedCornerShape(10.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            val salvo = salvarImagemFluxNaGaleria(context, bitmap)
+                            mensagem = if (salvo) "Imagem salva em Pictures/MoviImovel." else "Não foi possível salvar a imagem."
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF236D52))
+                    ) { Text("Salvar imagem na Galeria", color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+
+                TextButton(onClick = onVoltar) { Text("Voltar para vídeos", color = Color(0xFFD6B46A)) }
+            }
+        }
+    }
+}
+
+private fun editarImagemFlux(
+    bitmap: Bitmap,
+    modelKey: String,
+    operation: String,
+    prompt: String
+): ResultadoImagemFlux {
+    val upload = postJson(
+        "$MOVIIMOVEL_VIDEO_WORKER/upload-image",
+        JSONObject().put("imageBase64", prepararImagemParaVideo(bitmap)).put("mimeType", "image/jpeg")
+    )
+    if (!upload.optBoolean("ok", false)) throw IllegalStateException(upload.optString("error", "Falha ao enviar imagem."))
+    val imageUrl = upload.optString("imageUrl")
+    if (imageUrl.isBlank()) throw IllegalStateException("O Worker não devolveu a URL da foto.")
+    val edit = postJson(
+        "$MOVIIMOVEL_VIDEO_WORKER/edit-image",
+        JSONObject()
+            .put("imageUrl", imageUrl)
+            .put("modelKey", modelKey)
+            .put("operation", operation)
+            .put("prompt", prompt)
+            .put("roomType", "ambiente de imóvel")
+            .put("style", "realista, neutro e proporcional")
+    )
+    if (!edit.optBoolean("ok", false)) throw IllegalStateException(edit.optString("error", edit.optString("technicalError", "Falha ao editar imagem.")))
+    val resultUrl = edit.optString("imageUrl")
+    if (resultUrl.isBlank()) throw IllegalStateException("O Worker não devolveu a imagem final.")
+    return ResultadoImagemFlux(resultUrl, edit.optString("model", modelKey))
+}
+
+private fun baixarBitmapDaUrl(url: String): Bitmap? {
+    val connection = URL(url).openConnection() as HttpURLConnection
+    return try {
+        connection.connectTimeout = 30_000
+        connection.readTimeout = 180_000
+        connection.instanceFollowRedirects = true
+        if (connection.responseCode !in 200..299) return null
+        connection.inputStream.use { BitmapFactory.decodeStream(it) }
+    } finally { connection.disconnect() }
+}
+
+private fun salvarImagemFluxNaGaleria(context: Context, bitmap: Bitmap): Boolean {
+    return try {
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "movimovel_flux_${System.currentTimeMillis()}.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/MoviImovel")
+        }
+        val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+        context.contentResolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) } ?: return false
+        true
+    } catch (_: Exception) { false }
 }
