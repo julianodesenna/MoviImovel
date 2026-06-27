@@ -58,34 +58,155 @@ function normalizeImageMimeType(value) {
   return mimeType.startsWith("image/") ? mimeType : "image/jpeg"
 }
 
-function buildImageEditPrompt(operation, customPrompt, roomType, style) {
-  const baseRules = [
-    "Preserve exactly the structural elements of the original property: walls, floor, ceiling, doors, windows, baseboards, electrical outlets, natural lighting and camera perspective.",
-    "Keep realistic scale and perspective.",
-    "Do not add people, animals, watermarks, logos or text.",
-    "This is an illustrative AI edit for a real estate presentation; do not hide structural defects."
-  ].join(" ")
+function getImageDimensions(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
 
-  if (customPrompt) {
-    return `${customPrompt.trim()} ${baseRules}`
+  // PNG
+  if (
+    b.length >= 24 &&
+    b[0] === 0x89 &&
+    b[1] === 0x50 &&
+    b[2] === 0x4e &&
+    b[3] === 0x47
+  ) {
+    return {
+      width: ((b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19]) >>> 0,
+      height: ((b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23]) >>> 0
+    }
   }
 
+  // JPEG
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2
+
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) {
+        i++
+        continue
+      }
+
+      const marker = b[i + 1]
+      i += 2
+
+      if (marker === 0xd8 || marker === 0xd9) continue
+      if (i + 1 >= b.length) break
+
+      const length = (b[i] << 8) + b[i + 1]
+      if (length < 2 || i + length > b.length) break
+
+      const sofMarkers = [
+        0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6,
+        0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf
+      ]
+
+      if (sofMarkers.includes(marker) && i + 7 < b.length) {
+        return {
+          height: (b[i + 3] << 8) + b[i + 4],
+          width: (b[i + 5] << 8) + b[i + 6]
+        }
+      }
+
+      i += length
+    }
+  }
+
+  // WEBP VP8X
+  if (
+    b.length >= 30 &&
+    String.fromCharCode(...b.slice(0, 4)) === "RIFF" &&
+    String.fromCharCode(...b.slice(8, 12)) === "WEBP" &&
+    String.fromCharCode(...b.slice(12, 16)) === "VP8X"
+  ) {
+    return {
+      width: 1 + b[24] + (b[25] << 8) + (b[26] << 16),
+      height: 1 + b[27] + (b[28] << 8) + (b[29] << 16)
+    }
+  }
+
+  return null
+}
+
+function clampFluxDimension(value) {
+  const rounded = Math.round(Number(value || 0) / 32) * 32
+  return Math.max(256, Math.min(1920, rounded || 1024))
+}
+
+function getFluxOutputSize(imageBytes) {
+  const input = getImageDimensions(imageBytes)
+
+  if (!input || !input.width || !input.height) {
+    return {
+      inputWidth: null,
+      inputHeight: null,
+      width: 1024,
+      height: 1024,
+      orientation: "unknown"
+    }
+  }
+
+  const portrait = input.height > input.width
+  const landscape = input.width > input.height
+  const longestSide = 1024
+  const scale = longestSide / Math.max(input.width, input.height)
+
+  let width = clampFluxDimension(input.width * scale)
+  let height = clampFluxDimension(input.height * scale)
+
+  if (portrait && width >= height) {
+    width = Math.max(256, height - 32)
+  }
+
+  if (landscape && height >= width) {
+    height = Math.max(256, width - 32)
+  }
+
+  return {
+    inputWidth: input.width,
+    inputHeight: input.height,
+    width,
+    height,
+    orientation: portrait ? "portrait" : landscape ? "landscape" : "square"
+  }
+}
+
+function buildImageEditPrompt(operation, customPrompt, roomType, style) {
+  const architectureRules = [
+    "This is a faithful real-estate photo cleanup, not a redesign.",
+    "Preserve the exact original architecture and geometry of the photographed property.",
+    "Keep exactly unchanged: room width, room depth, ceiling height, wall positions, wall spacing, floor perspective, camera position, camera angle, lens feel, field of view, framing and image orientation.",
+    "Preserve every fixed structural element exactly where it is: doors, door openings, windows, window size, window position, walls, ceiling, floor, baseboards, electrical outlets, switches, light fixtures and fixed appliances.",
+    "The room may be narrow or elongated. Preserve its real narrow or elongated shape exactly.",
+    "Do not enlarge, widen, deepen, stretch, open up, modernize, renovate or redesign the room.",
+    "Do not create, remove, move, replace or modify doors, windows, walls, passages, ceiling lines, floor lines or structural openings.",
+    "Do not change perspective, crop, zoom out, reframe or change the aspect ratio.",
+    "Do not add people, animals, watermarks, logos or text.",
+    "This is an illustrative AI edit for a real-estate presentation; do not hide structural defects."
+  ].join(" ")
+
   if (operation === "empty") {
+    const requested = customPrompt
+      ? customPrompt.trim()
+      : "Remove only movable furniture, loose objects, appliances, decorations, rugs, shelves, ladders and clutter."
+
     return [
-      "Remove all movable furniture, sofa, TV, rug, table, appliances, decorations and loose objects from this room.",
-      "Reconstruct the visible floor, walls and background naturally.",
-      "Leave the room empty, clean and realistic for a real estate listing.",
-      baseRules
+      requested,
+      "Only fill the specific areas previously occupied by the removed movable objects.",
+      "Do not regenerate the whole room.",
+      "Do not invent hidden architectural elements behind objects.",
+      architectureRules
     ].join(" ")
   }
 
   const safeRoom = roomType || "room"
   const safeStyle = style || "modern, elegant and neutral"
+  const requested = customPrompt
+    ? customPrompt.trim()
+    : `Furnish this ${safeRoom} with realistic ${safeStyle} furniture and discreet decor appropriate for a real-estate listing.`
 
   return [
-    `Furnish this ${safeRoom} with realistic ${safeStyle} furniture and discreet decor appropriate for a real estate listing.`,
+    requested,
     "Do not block doors, windows, passages or fixed appliances.",
-    baseRules
+    architectureRules
   ].join(" ")
 }
 
@@ -170,12 +291,21 @@ async function runFluxEditFromBytes({ env, imageBytes, mimeType, operation, cust
   }
 
   const prompt = buildImageEditPrompt(operation, customPrompt, roomType, style)
+  const outputSize = getFluxOutputSize(bytes)
+  const guidance = "2.2"
+  const editMode = "preserve_architecture"
+
   const form = new FormData()
   form.append("prompt", prompt)
   form.append("input_image_0", new Blob([bytes], { type: contentType }), "ambiente.jpg")
-  form.append("width", "1024")
-  form.append("height", "768")
-  form.append("guidance", "3.5")
+
+  // Mantém proporção e orientação da foto original.
+  form.append("width", String(outputSize.width))
+  form.append("height", String(outputSize.height))
+
+  // Guidance mais conservador para reduzir recriação de arquitetura.
+  form.append("guidance", guidance)
+
   if (model.steps) form.append("steps", model.steps)
 
   const serialized = new Response(form)
@@ -200,7 +330,16 @@ async function runFluxEditFromBytes({ env, imageBytes, mimeType, operation, cust
     customMetadata: { origem: model.origin, operacao: operation, modelo: model.id }
   })
 
-  return { prompt, imageKey: key, mimeType: "image/jpeg", raw: result, model }
+  return {
+    prompt,
+    imageKey: key,
+    mimeType: "image/jpeg",
+    raw: result,
+    model,
+    outputSize,
+    guidance,
+    editMode
+  }
 }
 
 async function runFluxEdit({ env, imageUrl, operation, customPrompt, roomType, style, modelKey = "klein4b" }) {
@@ -829,7 +968,14 @@ export default {
           diagnostics: {
             traceId,
             stage,
-            version: "FLUX-DIRECT-APK-20260627"
+            version: "FLUX-PRESERVAR-ARQUITETURA-20260627",
+            editMode: edited.editMode,
+            guidance: edited.guidance,
+            inputWidth: edited.outputSize.inputWidth,
+            inputHeight: edited.outputSize.inputHeight,
+            outputWidth: edited.outputSize.width,
+            outputHeight: edited.outputSize.height,
+            orientation: edited.outputSize.orientation
           },
           notice: "Imagem ilustrativa editada por IA. Preserve a foto original e revise o resultado antes de publicar."
         })
@@ -843,7 +989,8 @@ export default {
           diagnostics: {
             traceId,
             stage,
-            version: "FLUX-DIRECT-APK-20260627"
+            version: "FLUX-PRESERVAR-ARQUITETURA-20260627",
+            editMode: "preserve_architecture"
           }
         }, 500)
       }
@@ -896,7 +1043,7 @@ export default {
           klein4b: FLUX_IMAGE_MODELS.klein4b.id,
           dev: FLUX_IMAGE_MODELS.dev.id
         },
-        versaoImagem: "FLUX-DIAG-512-20260627"
+        versaoImagem: "FLUX-PRESERVAR-ARQUITETURA-20260627"
       })
     }
 
