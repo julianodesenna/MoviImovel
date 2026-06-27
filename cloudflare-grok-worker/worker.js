@@ -737,7 +737,9 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === "/edit-image") {
+      const traceId = `flux-${crypto.randomUUID()}`
       let requestedModelKey = "klein4b"
+      let stage = "recebendo_pedido"
       try {
         const body = await request.json()
         const imageUrl = String(body.imageUrl || "").trim()
@@ -749,13 +751,14 @@ export default {
         requestedModelKey = modelKey
 
         if (!imageUrl.startsWith("https://") && !imageUrl.startsWith("http://")) {
-          return json({ ok: false, error: "imageUrl deve ser uma URL pública iniciando com https:// ou http://." }, 400)
+          return json({ ok: false, error: "imageUrl deve ser uma URL pública iniciando com https:// ou http://.", diagnostics: { traceId, stage, modelKey } }, 400)
         }
 
         if (!["empty", "furnish"].includes(operation)) {
-          return json({ ok: false, error: "operation deve ser empty ou furnish." }, 400)
+          return json({ ok: false, error: "operation deve ser empty ou furnish.", diagnostics: { traceId, stage, modelKey } }, 400)
         }
 
+        stage = "baixando_foto_do_r2"
         const edited = await runFluxEdit({
           env,
           imageUrl,
@@ -765,6 +768,7 @@ export default {
           style,
           modelKey
         })
+        stage = "imagem_gerada_e_salva"
 
         return json({
           ok: true,
@@ -776,15 +780,25 @@ export default {
           imageUrl: `${url.origin}/images/${edited.imageKey}`,
           promptUsed: edited.prompt,
           mimeType: edited.mimeType,
+          diagnostics: {
+            traceId,
+            stage,
+            version: "FLUX-DIAG-512-20260627"
+          },
           notice: "Imagem ilustrativa editada por IA. Preserve a foto original e revise o resultado antes de publicar."
         })
       } catch (error) {
         return json({
           ok: false,
           error: friendlyImageError(error),
-          technicalError: error?.message || "Erro desconhecido ao editar a imagem.",
+          technicalError: String(error?.message || "Erro desconhecido ao editar a imagem."),
           modelKey: requestedModelKey,
-          model: "FLUX não concluído"
+          model: "FLUX não concluído",
+          diagnostics: {
+            traceId,
+            stage,
+            version: "FLUX-DIAG-512-20260627"
+          }
         }, 500)
       }
     }
@@ -831,12 +845,12 @@ export default {
         videosPermanentes: "GET /videos/{arquivo}",
         imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
-        observacao: "edit-image permite escolher FLUX.2 klein 4B ou FLUX.2 dev pelo Workers AI interno da Cloudflare.",
+        observacao: "edit-image permite escolher FLUX.2 klein 4B ou FLUX.2 dev pelo Workers AI interno da Cloudflare. O APK reduz a referência para até 512 px antes de enviar ao FLUX.",
         modelosImagem: {
           klein4b: FLUX_IMAGE_MODELS.klein4b.id,
           dev: FLUX_IMAGE_MODELS.dev.id
         },
-        versaoImagem: "DUAL-FLUX-APK-20260627"
+        versaoImagem: "FLUX-DIAG-512-20260627"
       })
     }
 

@@ -2383,6 +2383,49 @@ private fun carregarBitmapAltaQualidade(
 }
 
 
+private data class EntradaFluxPreparada(
+    val imageBase64: String,
+    val width: Int,
+    val height: Int,
+    val bytes: Int
+)
+
+private fun prepararImagemParaFlux(
+    bitmap: Bitmap
+): EntradaFluxPreparada {
+    // A referência de imagem do FLUX no Workers AI deve ficar dentro do limite de 512 px.
+    val limite = 512
+    val maiorLado = maxOf(bitmap.width, bitmap.height)
+
+    val imagemFinal =
+        if (maiorLado > limite) {
+            val proporcao = limite.toFloat() / maiorLado.toFloat()
+            Bitmap.createScaledBitmap(
+                bitmap,
+                maxOf(1, (bitmap.width * proporcao).toInt()),
+                maxOf(1, (bitmap.height * proporcao).toInt()),
+                true
+            )
+        } else {
+            bitmap
+        }
+
+    val output = ByteArrayOutputStream()
+    imagemFinal.compress(
+        Bitmap.CompressFormat.JPEG,
+        90,
+        output
+    )
+
+    val bytes = output.toByteArray()
+    return EntradaFluxPreparada(
+        imageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
+        width = imagemFinal.width,
+        height = imagemFinal.height,
+        bytes = bytes.size
+    )
+}
+
 private data class ResultadoImagemFlux(
     val imageUrl: String,
     val model: String
@@ -2418,7 +2461,7 @@ private fun TelaImagemFlux(onVoltar: () -> Unit) {
             ) {
                 Text("Imagem IA", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "Use a mesma foto e compare os dois modelos. FLUX.2 klein 4B é econômico; FLUX.2 dev prioriza qualidade.",
+                    "Use a mesma foto e compare os dois modelos. A referência é reduzida para até 512 px antes do envio, como exigido pelo FLUX.2. Klein 4B é econômico; dev prioriza qualidade.",
                     color = Color(0xFFC6D0D6), fontSize = 14.sp
                 )
                 Button(
@@ -2481,7 +2524,7 @@ private fun TelaImagemFlux(onVoltar: () -> Unit) {
                             try {
                                 val bitmap = carregarBitmapAltaQualidade(context, uri.toString())
                                     ?: throw IllegalStateException("Não foi possível abrir a foto.")
-                                withContext(Dispatchers.Main) { mensagem = "Gerando com ${if (modelo == "dev") "FLUX.2 dev" else "FLUX.2 klein 4B"}..." }
+                                withContext(Dispatchers.Main) { mensagem = "Preparando referência de até 512 px e gerando com ${if (modelo == "dev") "FLUX.2 dev" else "FLUX.2 klein 4B"}..." }
                                 val resposta = editarImagemFlux(bitmap, modelo, operacao, pedido)
                                 val imagem = baixarBitmapDaUrl(resposta.imageUrl)
                                     ?: throw IllegalStateException("A IA gerou a imagem, mas não foi possível baixá-la.")
@@ -2535,13 +2578,26 @@ private fun editarImagemFlux(
     operation: String,
     prompt: String
 ): ResultadoImagemFlux {
+    val entradaFlux = prepararImagemParaFlux(bitmap)
+
     val upload = postJson(
         "$MOVIIMOVEL_VIDEO_WORKER/upload-image",
-        JSONObject().put("imageBase64", prepararImagemParaVideo(bitmap)).put("mimeType", "image/jpeg")
+        JSONObject()
+            .put("imageBase64", entradaFlux.imageBase64)
+            .put("mimeType", "image/jpeg")
     )
-    if (!upload.optBoolean("ok", false)) throw IllegalStateException(upload.optString("error", "Falha ao enviar imagem."))
+
+    if (!upload.optBoolean("ok", false)) {
+        throw IllegalStateException(
+            upload.optString("error", "Falha ao enviar a foto para o Worker.")
+        )
+    }
+
     val imageUrl = upload.optString("imageUrl")
-    if (imageUrl.isBlank()) throw IllegalStateException("O Worker não devolveu a URL da foto.")
+    if (imageUrl.isBlank()) {
+        throw IllegalStateException("O Worker não devolveu a URL da foto enviada.")
+    }
+
     val edit = postJson(
         "$MOVIIMOVEL_VIDEO_WORKER/edit-image",
         JSONObject()
@@ -2551,11 +2607,36 @@ private fun editarImagemFlux(
             .put("prompt", prompt)
             .put("roomType", "ambiente de imóvel")
             .put("style", "realista, neutro e proporcional")
+            .put("sourceWidth", entradaFlux.width)
+            .put("sourceHeight", entradaFlux.height)
+            .put("sourceBytes", entradaFlux.bytes)
     )
-    if (!edit.optBoolean("ok", false)) throw IllegalStateException(edit.optString("error", edit.optString("technicalError", "Falha ao editar imagem.")))
+
+    if (!edit.optBoolean("ok", false)) {
+        val mensagemPublica = edit.optString("error", "Falha ao editar imagem.")
+        val tecnico = edit.optString("technicalError").trim()
+        val diagnostico = edit.optJSONObject("diagnostics")
+        val traceId = diagnostico?.optString("traceId")?.trim().orEmpty()
+        val etapa = diagnostico?.optString("stage")?.trim().orEmpty()
+
+        val detalhe = buildString {
+            append(mensagemPublica)
+            if (tecnico.isNotBlank()) append("\nDiagnóstico: ").append(tecnico.take(500))
+            if (etapa.isNotBlank()) append("\nEtapa: ").append(etapa)
+            if (traceId.isNotBlank()) append("\nCódigo: ").append(traceId)
+        }
+        throw IllegalStateException(detalhe)
+    }
+
     val resultUrl = edit.optString("imageUrl")
-    if (resultUrl.isBlank()) throw IllegalStateException("O Worker não devolveu a imagem final.")
-    return ResultadoImagemFlux(resultUrl, edit.optString("model", modelKey))
+    if (resultUrl.isBlank()) {
+        throw IllegalStateException("O Worker confirmou a edição, mas não devolveu a imagem final.")
+    }
+
+    return ResultadoImagemFlux(
+        resultUrl,
+        edit.optString("model", modelKey)
+    )
 }
 
 private fun baixarBitmapDaUrl(url: String): Bitmap? {
