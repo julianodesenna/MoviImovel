@@ -737,6 +737,7 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === "/edit-image") {
+      let requestedModelKey = "klein4b"
       try {
         const body = await request.json()
         const imageUrl = String(body.imageUrl || "").trim()
@@ -745,6 +746,7 @@ export default {
         const roomType = String(body.roomType || "").trim()
         const style = String(body.style || "").trim()
         const modelKey = String(body.modelKey || "klein4b").trim().toLowerCase()
+        requestedModelKey = modelKey
 
         if (!imageUrl.startsWith("https://") && !imageUrl.startsWith("http://")) {
           return json({ ok: false, error: "imageUrl deve ser uma URL pública iniciando com https:// ou http://." }, 400)
@@ -781,7 +783,7 @@ export default {
           ok: false,
           error: friendlyImageError(error),
           technicalError: error?.message || "Erro desconhecido ao editar a imagem.",
-          modelKey: String(body?.modelKey || "klein4b"),
+          modelKey: requestedModelKey,
           model: "FLUX não concluído"
         }, 500)
       }

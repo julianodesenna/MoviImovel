@@ -1869,7 +1869,21 @@ private fun postJson(
             )
         }
 
-        return JSONObject(responseText)
+        if (!responseText.trimStart().startsWith("{")) {
+            throw IllegalStateException(
+                "O Worker respondeu um texto inesperado. HTTP $code: " +
+                    responseText.take(300)
+            )
+        }
+
+        return try {
+            JSONObject(responseText)
+        } catch (_: Exception) {
+            throw IllegalStateException(
+                "O Worker devolveu uma resposta JSON inválida. HTTP $code: " +
+                    responseText.take(300)
+            )
+        }
     } finally {
         connection.disconnect()
     }
