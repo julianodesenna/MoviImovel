@@ -10,6 +10,19 @@ function decodeBase64ToBytes(base64Text) {
   return bytes
 }
 
+function decodeIncomingImageBase64(value) {
+  const raw = String(value || "").trim()
+  if (!raw) return new Uint8Array()
+
+  // Aceita tanto Base64 puro quanto data URL. O APK usa Base64 puro.
+  const commaIndex = raw.indexOf(",")
+  const payload = raw.toLowerCase().startsWith("data:image/") && commaIndex >= 0
+    ? raw.slice(commaIndex + 1)
+    : raw
+
+  return decodeBase64ToBytes(payload)
+}
+
 function createUploadedImageKey() {
   const now = new Date()
   const year = now.getUTCFullYear()
@@ -742,6 +755,8 @@ export default {
       let stage = "recebendo_pedido"
       try {
         const body = await request.json()
+        const imageBase64 = String(body.imageBase64 || "").trim()
+        const mimeType = normalizeImageMimeType(body.mimeType || "image/jpeg")
         const imageUrl = String(body.imageUrl || "").trim()
         const operation = String(body.operation || "empty").trim().toLowerCase()
         const customPrompt = String(body.prompt || "").trim()
@@ -750,26 +765,57 @@ export default {
         const modelKey = String(body.modelKey || "klein4b").trim().toLowerCase()
         requestedModelKey = modelKey
 
-        if (!imageUrl.startsWith("https://") && !imageUrl.startsWith("http://")) {
-          return json({ ok: false, error: "imageUrl deve ser uma URL pública iniciando com https:// ou http://.", diagnostics: { traceId, stage, modelKey } }, 400)
-        }
-
         if (!["empty", "furnish"].includes(operation)) {
           return json({ ok: false, error: "operation deve ser empty ou furnish.", diagnostics: { traceId, stage, modelKey } }, 400)
         }
 
-        stage = "baixando_foto_do_r2"
-        const edited = await runFluxEdit({
-          env,
-          imageUrl,
-          operation,
-          customPrompt,
-          roomType,
-          style,
-          modelKey
-        })
-        stage = "imagem_gerada_e_salva"
+        let edited
 
+        if (imageBase64) {
+          // Caminho principal do APK: evita salvar e buscar a foto de origem no R2.
+          stage = "recebendo_foto_direta_do_apk"
+          if (!mimeType.startsWith("image/")) {
+            return json({ ok: false, error: "mimeType deve ser uma imagem.", diagnostics: { traceId, stage, modelKey } }, 400)
+          }
+
+          const imageBytes = decodeIncomingImageBase64(imageBase64)
+          if (imageBytes.byteLength < 100) {
+            return json({ ok: false, error: "A imagem enviada está vazia ou inválida.", diagnostics: { traceId, stage, modelKey } }, 400)
+          }
+          if (imageBytes.byteLength > 15 * 1024 * 1024) {
+            return json({ ok: false, error: "Imagem muito grande. O limite é 15 MB.", diagnostics: { traceId, stage, modelKey } }, 413)
+          }
+
+          stage = "enviando_foto_direta_para_flux"
+          edited = await runFluxEditFromBytes({
+            env,
+            imageBytes,
+            mimeType,
+            operation,
+            customPrompt,
+            roomType,
+            style,
+            modelKey
+          })
+        } else {
+          // Compatibilidade com chamadas antigas que ainda enviam apenas imageUrl.
+          if (!imageUrl.startsWith("https://") && !imageUrl.startsWith("http://")) {
+            return json({ ok: false, error: "Envie imageBase64 (preferido pelo APK) ou imageUrl público.", diagnostics: { traceId, stage, modelKey } }, 400)
+          }
+
+          stage = "baixando_foto_por_url"
+          edited = await runFluxEdit({
+            env,
+            imageUrl,
+            operation,
+            customPrompt,
+            roomType,
+            style,
+            modelKey
+          })
+        }
+
+        stage = "imagem_gerada_e_salva"
         return json({
           ok: true,
           provider: "cloudflare-workers-ai",
@@ -783,7 +829,7 @@ export default {
           diagnostics: {
             traceId,
             stage,
-            version: "FLUX-DIAG-512-20260627"
+            version: "FLUX-DIRECT-APK-20260627"
           },
           notice: "Imagem ilustrativa editada por IA. Preserve a foto original e revise o resultado antes de publicar."
         })
@@ -797,7 +843,7 @@ export default {
           diagnostics: {
             traceId,
             stage,
-            version: "FLUX-DIAG-512-20260627"
+            version: "FLUX-DIRECT-APK-20260627"
           }
         }, 500)
       }
@@ -845,7 +891,7 @@ export default {
         videosPermanentes: "GET /videos/{arquivo}",
         imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
-        observacao: "edit-image permite escolher FLUX.2 klein 4B ou FLUX.2 dev pelo Workers AI interno da Cloudflare. O APK reduz a referência para até 512 px antes de enviar ao FLUX.",
+        observacao: "edit-image aceita foto direta do APK em Base64 e envia ao FLUX sem buscar a imagem de origem no R2. O APK reduz a referência para até 512 px antes de enviar ao FLUX.",
         modelosImagem: {
           klein4b: FLUX_IMAGE_MODELS.klein4b.id,
           dev: FLUX_IMAGE_MODELS.dev.id

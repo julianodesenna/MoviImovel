@@ -2461,7 +2461,7 @@ private fun TelaImagemFlux(onVoltar: () -> Unit) {
             ) {
                 Text("Imagem IA", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "Use a mesma foto e compare os dois modelos. A referência é reduzida para até 512 px antes do envio, como exigido pelo FLUX.2. Klein 4B é econômico; dev prioriza qualidade.",
+                    "Use a mesma foto e compare os dois modelos. A referência é reduzida para até 512 px e enviada diretamente ao FLUX, sem buscar a foto de origem no R2. Klein 4B é econômico; dev prioriza qualidade.",
                     color = Color(0xFFC6D0D6), fontSize = 14.sp
                 )
                 Button(
@@ -2519,7 +2519,7 @@ private fun TelaImagemFlux(onVoltar: () -> Unit) {
                         val uri = fotoUri ?: run { mensagem = "Escolha uma foto antes de gerar."; return@Button }
                         gerando = true
                         resultado = null
-                        mensagem = "Enviando foto para o Worker..."
+                        mensagem = "Preparando e enviando a foto diretamente para a IA..."
                         scope.launch(Dispatchers.IO) {
                             try {
                                 val bitmap = carregarBitmapAltaQualidade(context, uri.toString())
@@ -2580,28 +2580,13 @@ private fun editarImagemFlux(
 ): ResultadoImagemFlux {
     val entradaFlux = prepararImagemParaFlux(bitmap)
 
-    val upload = postJson(
-        "$MOVIIMOVEL_VIDEO_WORKER/upload-image",
-        JSONObject()
-            .put("imageBase64", entradaFlux.imageBase64)
-            .put("mimeType", "image/jpeg")
-    )
-
-    if (!upload.optBoolean("ok", false)) {
-        throw IllegalStateException(
-            upload.optString("error", "Falha ao enviar a foto para o Worker.")
-        )
-    }
-
-    val imageUrl = upload.optString("imageUrl")
-    if (imageUrl.isBlank()) {
-        throw IllegalStateException("O Worker não devolveu a URL da foto enviada.")
-    }
-
+    // A imagem vai diretamente do APK para /edit-image.
+    // Não depende mais de gravar e baixar a foto de origem pelo R2.
     val edit = postJson(
         "$MOVIIMOVEL_VIDEO_WORKER/edit-image",
         JSONObject()
-            .put("imageUrl", imageUrl)
+            .put("imageBase64", entradaFlux.imageBase64)
+            .put("mimeType", "image/jpeg")
             .put("modelKey", modelKey)
             .put("operation", operation)
             .put("prompt", prompt)
@@ -2645,7 +2630,10 @@ private fun baixarBitmapDaUrl(url: String): Bitmap? {
         connection.connectTimeout = 30_000
         connection.readTimeout = 180_000
         connection.instanceFollowRedirects = true
-        if (connection.responseCode !in 200..299) return null
+        val code = connection.responseCode
+        if (code !in 200..299) {
+            throw IllegalStateException("A IA gerou a imagem, mas o resultado não pôde ser baixado. HTTP $code.")
+        }
         connection.inputStream.use { BitmapFactory.decodeStream(it) }
     } finally { connection.disconnect() }
 }
