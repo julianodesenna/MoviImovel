@@ -116,13 +116,38 @@ function findGeneratedImage(result) {
   return null
 }
 
-async function runFluxEditFromBytes({ env, imageBytes, mimeType, operation, customPrompt, roomType, style }) {
+const FLUX_IMAGE_MODELS = {
+  klein4b: {
+    id: "@cf/black-forest-labs/flux-2-klein-4b",
+    name: "FLUX.2 klein 4B",
+    steps: null,
+    origin: "Movimovel FLUX.2 klein 4B"
+  },
+  dev: {
+    id: "@cf/black-forest-labs/flux-2-dev",
+    name: "FLUX.2 dev",
+    steps: "8",
+    origin: "Movimovel FLUX.2 dev (8 etapas)"
+  }
+}
+
+function getFluxImageModel(modelKey) {
+  const key = String(modelKey || "klein4b").trim().toLowerCase()
+  const model = FLUX_IMAGE_MODELS[key]
+  if (!model) {
+    throw new Error("Modelo de imagem inválido. Use klein4b ou dev.")
+  }
+  return { key, ...model }
+}
+
+async function runFluxEditFromBytes({ env, imageBytes, mimeType, operation, customPrompt, roomType, style, modelKey = "klein4b" }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Workers AI (binding AI) não está configurado no Worker.")
   }
 
   const bytes = imageBytes instanceof Uint8Array ? imageBytes : new Uint8Array(imageBytes)
   const contentType = normalizeImageMimeType(mimeType)
+  const model = getFluxImageModel(modelKey)
 
   if (bytes.byteLength < 100) {
     throw new Error("A imagem enviada está vazia ou inválida.")
@@ -138,11 +163,11 @@ async function runFluxEditFromBytes({ env, imageBytes, mimeType, operation, cust
   form.append("width", "1024")
   form.append("height", "768")
   form.append("guidance", "3.5")
-  form.append("steps", "8")
+  if (model.steps) form.append("steps", model.steps)
 
   const serialized = new Response(form)
   const contentTypeHeader = serialized.headers.get("content-type")
-  const result = await env.AI.run("@cf/black-forest-labs/flux-2-dev", {
+  const result = await env.AI.run(model.id, {
     multipart: {
       body: serialized.body,
       contentType: contentTypeHeader
@@ -159,20 +184,20 @@ async function runFluxEditFromBytes({ env, imageBytes, mimeType, operation, cust
   if (!env.VIDEOS) throw new Error("O bucket R2 VIDEOS não está configurado no Worker.")
   await env.VIDEOS.put(key, imageOutput, {
     httpMetadata: { contentType: "image/jpeg" },
-    customMetadata: { origem: "Movimovel FLUX.2 dev (8 etapas)", operacao: operation }
+    customMetadata: { origem: model.origin, operacao: operation, modelo: model.id }
   })
 
-  return { prompt, imageKey: key, mimeType: "image/jpeg", raw: result }
+  return { prompt, imageKey: key, mimeType: "image/jpeg", raw: result, model }
 }
 
-async function runFluxEdit({ env, imageUrl, operation, customPrompt, roomType, style }) {
+async function runFluxEdit({ env, imageUrl, operation, customPrompt, roomType, style, modelKey = "klein4b" }) {
   const source = await fetch(imageUrl)
   if (!source.ok) throw new Error(`Não foi possível baixar a imagem de origem. HTTP ${source.status}.`)
   return runFluxEditFromBytes({
     env,
     imageBytes: new Uint8Array(await source.arrayBuffer()),
     mimeType: source.headers.get("content-type"),
-    operation, customPrompt, roomType, style
+    operation, customPrompt, roomType, style, modelKey
   })
 }
 
@@ -213,8 +238,8 @@ function escapeHtml(value) {
 function imageTestPageHtml(message = "", technical = "", imageUrl = "") {
   const status = message ? `<div class="status ${imageUrl ? "ok" : "error"}"><strong>${escapeHtml(message)}</strong>${technical ? `<pre>${escapeHtml(technical)}</pre>` : ""}</div>` : ""
   const result = imageUrl ? `<div class="card"><img class="result" src="${escapeHtml(imageUrl)}" alt="Imagem editada"></div>` : ""
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Movimovel · Teste FLUX.2 dev · Imagem IA</title><style>
-body{margin:0;background:#ececef;color:#151515;font:18px Arial,sans-serif}main{max-width:680px;margin:auto;padding:24px 16px 44px}h1{font-size:30px;margin:0 0 8px}.sub{color:#5c5c5c;line-height:1.45}.card{background:#fff;border:1px solid #d7d4cd;border-radius:18px;padding:18px;margin:16px 0;box-shadow:0 5px 18px #0000000d}label{display:block;font-weight:700;margin:14px 0 8px}input,select,textarea,button{box-sizing:border-box;width:100%;font:inherit;border-radius:12px}input,select,textarea{padding:14px;border:1px solid #c8c5be;background:#fff}textarea{min-height:120px}button{margin-top:18px;padding:16px;border:1px solid #b89349;background:#141414;color:#fff;font-weight:700}.status{padding:16px;border-radius:14px;line-height:1.45;margin:16px 0}.error{background:#fff0f0;color:#842b2b}.ok{background:#edf8ef;color:#205f2f}pre{margin:12px 0 0;white-space:pre-wrap;word-break:break-word;font:14px monospace}.note{color:#6b6256;font-size:14px;line-height:1.45}.result{width:100%;border-radius:14px;display:block}</style></head><body><main><h1>Teste FLUX.2 dev</h1><p class="sub">Modelo ativo: FLUX.2 dev da Cloudflare — teste com 8 etapas para controlar custo. Envie uma foto, escolha a edição e gere uma prévia. A foto original é preservada.</p>${status}${result}<form class="card" action="/test-image-submit" method="post" enctype="multipart/form-data"><label>Foto do ambiente</label><input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required><label>Tipo de edição</label><select name="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select><label>Tipo de cômodo (opcional)</label><input name="roomType" placeholder="Ex.: sala, quarto, cozinha"><label>Estilo (opcional)</label><input name="style" placeholder="Ex.: moderno, clean, madeira clara"><label>Pedido adicional (opcional)</label><textarea name="prompt" placeholder="Ex.: manter portas, janelas, piso e iluminação. Remover apenas os móveis."></textarea><button type="submit">Gerar imagem</button><p class="note">Após tocar em Gerar imagem, o navegador abrirá a resposta. Não depende de JavaScript.</p></form></main></body></html>`
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Movimovel · Teste FLUX duplo · Imagem IA</title><style>
+body{margin:0;background:#ececef;color:#151515;font:18px Arial,sans-serif}main{max-width:680px;margin:auto;padding:24px 16px 44px}h1{font-size:30px;margin:0 0 8px}.sub{color:#5c5c5c;line-height:1.45}.card{background:#fff;border:1px solid #d7d4cd;border-radius:18px;padding:18px;margin:16px 0;box-shadow:0 5px 18px #0000000d}label{display:block;font-weight:700;margin:14px 0 8px}input,select,textarea,button{box-sizing:border-box;width:100%;font:inherit;border-radius:12px}input,select,textarea{padding:14px;border:1px solid #c8c5be;background:#fff}textarea{min-height:120px}button{margin-top:18px;padding:16px;border:1px solid #b89349;background:#141414;color:#fff;font-weight:700}.status{padding:16px;border-radius:14px;line-height:1.45;margin:16px 0}.error{background:#fff0f0;color:#842b2b}.ok{background:#edf8ef;color:#205f2f}pre{margin:12px 0 0;white-space:pre-wrap;word-break:break-word;font:14px monospace}.note{color:#6b6256;font-size:14px;line-height:1.45}.result{width:100%;border-radius:14px;display:block}</style></head><body><main><h1>Teste FLUX duplo</h1><p class="sub">Escolha entre FLUX.2 klein 4B (econômico) e FLUX.2 dev (qualidade). A foto original é preservada.</p>${status}${result}<form class="card" action="/test-image-submit" method="post" enctype="multipart/form-data"><label>Foto do ambiente</label><input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required><label>Modelo de imagem</label><select name="modelKey"><option value="klein4b">FLUX.2 klein 4B — econômico</option><option value="dev">FLUX.2 dev — qualidade</option></select><label>Tipo de edição</label><select name="operation"><option value="empty">Esvaziar ambiente</option><option value="furnish">Mobiliar ambiente</option></select><label>Tipo de cômodo (opcional)</label><input name="roomType" placeholder="Ex.: sala, quarto, cozinha"><label>Estilo (opcional)</label><input name="style" placeholder="Ex.: moderno, clean, madeira clara"><label>Pedido adicional (opcional)</label><textarea name="prompt" placeholder="Ex.: manter portas, janelas, piso e iluminação. Remover apenas os móveis."></textarea><button type="submit">Gerar imagem</button><p class="note">Após tocar em Gerar imagem, o navegador abrirá a resposta. Não depende de JavaScript.</p></form></main></body></html>`
 }
 
 function toNumber(value, fallback = 0) {
@@ -719,6 +744,7 @@ export default {
         const customPrompt = String(body.prompt || "").trim()
         const roomType = String(body.roomType || "").trim()
         const style = String(body.style || "").trim()
+        const modelKey = String(body.modelKey || "klein4b").trim().toLowerCase()
 
         if (!imageUrl.startsWith("https://") && !imageUrl.startsWith("http://")) {
           return json({ ok: false, error: "imageUrl deve ser uma URL pública iniciando com https:// ou http://." }, 400)
@@ -734,13 +760,15 @@ export default {
           operation,
           customPrompt,
           roomType,
-          style
+          style,
+          modelKey
         })
 
         return json({
           ok: true,
           provider: "cloudflare-workers-ai",
-          model: "@cf/black-forest-labs/flux-2-dev",
+          model: edited.model.id,
+          modelKey,
           operation,
           imageKey: edited.imageKey,
           imageUrl: `${url.origin}/images/${edited.imageKey}`,
@@ -753,7 +781,8 @@ export default {
           ok: false,
           error: friendlyImageError(error),
           technicalError: error?.message || "Erro desconhecido ao editar a imagem.",
-          model: "@cf/black-forest-labs/flux-2-dev"
+          modelKey: String(body?.modelKey || "klein4b"),
+          model: "FLUX não concluído"
         }, 500)
       }
     }
@@ -766,6 +795,7 @@ export default {
         const roomType = String(form.get("roomType") || "").trim()
         const style = String(form.get("style") || "").trim()
         const customPrompt = String(form.get("prompt") || "").trim()
+        const modelKey = String(form.get("modelKey") || "klein4b").trim().toLowerCase()
         if (!(photo instanceof File)) throw new Error("Escolha uma foto antes de gerar.")
         if (!photo.type.startsWith("image/")) throw new Error("O arquivo escolhido não é uma imagem válida.")
         if (!['empty','furnish'].includes(operation)) throw new Error("Tipo de edição inválido.")
@@ -773,7 +803,7 @@ export default {
           env,
           imageBytes: new Uint8Array(await photo.arrayBuffer()),
           mimeType: photo.type,
-          operation, customPrompt, roomType, style
+          operation, customPrompt, roomType, style, modelKey
         })
         return new Response(imageTestPageHtml("Imagem pronta.", "", `${url.origin}/images/${edited.imageKey}`), { headers: { "Content-Type":"text/html; charset=utf-8", "Cache-Control":"no-store" } })
       } catch (error) {
@@ -799,9 +829,12 @@ export default {
         videosPermanentes: "GET /videos/{arquivo}",
         imagensPermanentes: "GET /images/{arquivo}",
         consultaStatus: "GET /prediction-status/{id}",
-        observacao: "edit-image usa FLUX.2 dev pelo Workers AI interno da Cloudflare, em teste com 8 etapas.",
-        modeloImagemAtivo: "@cf/black-forest-labs/flux-2-dev",
-        versaoImagem: "FLUX-DEV-8PASSOS-20260627"
+        observacao: "edit-image permite escolher FLUX.2 klein 4B ou FLUX.2 dev pelo Workers AI interno da Cloudflare.",
+        modelosImagem: {
+          klein4b: FLUX_IMAGE_MODELS.klein4b.id,
+          dev: FLUX_IMAGE_MODELS.dev.id
+        },
+        versaoImagem: "DUAL-FLUX-APK-20260627"
       })
     }
 
