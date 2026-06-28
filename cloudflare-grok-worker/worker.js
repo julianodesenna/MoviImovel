@@ -1364,7 +1364,7 @@ function selectManualModel(){
     return
   }
 
-  if(/\s/.test(manualId)){
+  if(/\\s/.test(manualId)){
     note('O ID técnico não pode ter espaços.','err')
     return
   }
