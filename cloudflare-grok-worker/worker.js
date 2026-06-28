@@ -1149,21 +1149,86 @@ function labExtractBase64Image(body) {
   return ""
 }
 
+// MOVIMOVEL_STREAM_OUTPUT_V2
+function labDetectImageMimeType(bytes, hint = "") {
+  const hinted = String(hint || "").split(";")[0].trim().toLowerCase()
+
+  if (hinted.startsWith("image/")) {
+    return hinted === "image/jpg" ? "image/jpeg" : hinted
+  }
+
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+
+  if (
+    b.length >= 8 &&
+    b[0] === 0x89 &&
+    b[1] === 0x50 &&
+    b[2] === 0x4e &&
+    b[3] === 0x47
+  ) {
+    return "image/png"
+  }
+
+  if (
+    b.length >= 3 &&
+    b[0] === 0xff &&
+    b[1] === 0xd8 &&
+    b[2] === 0xff
+  ) {
+    return "image/jpeg"
+  }
+
+  if (
+    b.length >= 12 &&
+    String.fromCharCode(...b.slice(0, 4)) === "RIFF" &&
+    String.fromCharCode(...b.slice(8, 12)) === "WEBP"
+  ) {
+    return "image/webp"
+  }
+
+  return "image/jpeg"
+}
+
 async function labRunJsonModel(env, modelId, input) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Workers AI (binding AI) não está configurado no Worker.")
   }
 
-  const body = await env.AI.run(modelId, input)
-  const imageBase64 = labExtractBase64Image(body)
+  const output = await env.AI.run(modelId, input)
 
-  if (!imageBase64) {
-    throw new Error("O modelo respondeu, mas não retornou imagem neste modo. Escolha outro adaptador ou verifique o modelo.")
+  let bytes = null
+  let mimeHint = ""
+
+  if (output instanceof Response) {
+    mimeHint = output.headers.get("content-type") || ""
+    bytes = new Uint8Array(await output.arrayBuffer())
+  } else if (output && typeof output.getReader === "function") {
+    bytes = new Uint8Array(
+      await new Response(output).arrayBuffer()
+    )
+  } else if (output instanceof Uint8Array) {
+    bytes = output
+  } else if (output instanceof ArrayBuffer) {
+    bytes = new Uint8Array(output)
+  } else {
+    const imageBase64 = labExtractBase64Image(output)
+
+    if (!imageBase64) {
+      throw new Error(
+        "O modelo respondeu, mas não retornou uma imagem neste modo."
+      )
+    }
+
+    bytes = decodeBase64ToBytes(imageBase64)
+  }
+
+  if (!bytes || bytes.byteLength < 100) {
+    throw new Error("O modelo retornou uma imagem vazia ou inválida.")
   }
 
   return {
-    bytes: decodeBase64ToBytes(imageBase64),
-    mimeType: "image/jpeg"
+    bytes,
+    mimeType: labDetectImageMimeType(bytes, mimeHint)
   }
 }
 
