@@ -1293,6 +1293,51 @@ function labPageHtml() {
 <div id="statusTop"></div>
 <div class="card"><label>Senha do laboratório</label><input id="key" type="password" autocomplete="off" placeholder="Digite a senha definida no Termux"><button id="saveKey" class="subbtn" type="button">Guardar nesta aba</button><p class="small">A senha fica apenas nesta aba do navegador enquanto ela estiver aberta.</p></div>
 <div class="card"><div class="rowbtn"><button id="refresh" type="button">Atualizar catálogo Cloudflare</button><button id="loadCatalog" class="subbtn" type="button">Abrir catálogo salvo</button></div><label>Buscar modelo</label><input id="search" placeholder="Ex.: flux, stable, image, leonardo"><div id="catalog" class="small">Carregue o catálogo.</div></div>
+<!-- MOVIMOVEL_MANUAL_MODEL_ID_V1 -->
+<div class="card" style="margin-top:12px">
+  <b>Testar modelo manual por ID</b>
+
+  <p class="small">
+    Use esta área quando uma IA não aparecer no catálogo automático.
+  </p>
+
+  <label for="manualModelId">ID técnico da Cloudflare</label>
+
+  <input
+    id="manualModelId"
+    placeholder="@cf/runwayml/stable-diffusion-v1-5-inpainting"
+    autocomplete="off"
+  >
+
+  <label for="manualModelName">Nome para exibir (opcional)</label>
+
+  <input
+    id="manualModelName"
+    placeholder="Ex.: Stable Diffusion v1.5 Inpainting"
+    autocomplete="off"
+  >
+
+  <label for="manualAdapter">Tipo de uso</label>
+
+  <select id="manualAdapter">
+    <option value="inpaint">Foto + máscara / Inpainting</option>
+    <option value="flux_reference">Foto de referência → imagem</option>
+    <option value="text_to_image">Texto → imagem</option>
+    <option value="image_to_image_json">Foto → imagem JSON experimental</option>
+    <option value="catalog_only">Somente salvar / ainda sem teste</option>
+  </select>
+
+  <div class="rowbtn">
+    <button id="manualStable" type="button" class="subbtn">
+      Preencher Stable Diffusion Inpainting
+    </button>
+
+    <button id="manualSelect" type="button" class="subbtn">
+      Selecionar modelo manual
+    </button>
+  </div>
+</div>
+
 <div id="work" class="card hidden"><b id="chosenName"></b><div id="chosenMeta" class="small"></div><label>Modo de teste</label><select id="adapter"><option value="text_to_image">Texto → imagem</option><option value="flux_reference">Foto de referência → imagem (FLUX)</option><option value="inpaint">Foto + máscara (Inpainting)</option><option value="image_to_image_json">Foto → imagem (JSON experimental)</option><option value="catalog_only">Somente catálogo / sem teste ainda</option></select><label>Pedido</label><textarea id="prompt" placeholder="Descreva a geração ou edição que deseja testar."></textarea><div id="negativeBox"><label>O que evitar (opcional)</label><textarea id="negative" placeholder="Ex.: texto, marca d'água, pessoas"></textarea></div><div id="photoBox"><label>Foto de referência</label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp"></div><div id="maskBox" class="hidden"><label>Máscara</label><p class="warn">Pinte somente o que pode mudar. Vermelho = área que a IA poderá alterar.</p><input id="brush" type="range" min="12" max="140" value="48"><div class="canvaswrap"><canvas id="maskCanvas"></canvas></div><button id="clearMask" type="button" class="subbtn">Limpar marcação</button></div><div class="grid"><div><label>Largura (opcional)</label><input id="width" type="number" min="256" max="2048" placeholder="Ex.: 768"></div><div><label>Altura (opcional)</label><input id="height" type="number" min="256" max="2048" placeholder="Ex.: 1024"></div><div><label>Etapas (opcional)</label><input id="steps" type="number" min="1" max="30" placeholder="Ex.: 15"></div><div><label>Guidance (opcional)</label><input id="guidance" type="number" step="0.1" min="0" max="20" placeholder="Ex.: 4"></div><div><label>Strength (opcional)</label><input id="strength" type="number" step="0.05" min="0" max="1" placeholder="Ex.: 0.45"></div></div><button id="test" type="button">Gerar teste real</button><hr style="border-color:#30404a;margin:22px 0"><label><input id="enableApp" type="checkbox" style="width:auto"> Disponibilizar no app depois da atualização do APK</label><label>Onde aparecerá no app</label><select id="slot"><option value="">Somente biblioteca</option><option value="empty_property">Esvaziar imóvel</option><option value="furnish_property">Mobiliar imóvel</option><option value="edit_any_photo">Editar qualquer foto</option><option value="remove_with_mask">Remover com máscara</option><option value="create_image">Criar imagem nova</option><option value="movement_image">Movimento de imagem</option></select><button id="approve" type="button" class="subbtn">Salvar na biblioteca aprovada</button></div>
 <div class="card"><b>Biblioteca aprovada</b><div id="library" class="small">Carregando…</div></div><div id="status"></div><div id="result"></div>
 </main><script>
@@ -1301,13 +1346,57 @@ var key=document.getElementById('key'),catalogEl=document.getElementById('catalo
 function esc(x){return String(x||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}function note(t,c){var h=t?'<div class="'+c+'">'+esc(t)+'</div>':'';status.innerHTML=h;statusTop.innerHTML=h}function headers(){return {'x-movimovel-lab-key':key.value}}function api(path,opt){opt=opt||{};opt.headers=Object.assign({},headers(),opt.headers||{});return fetch(path,opt).then(async function(r){var b=await r.json().catch(function(){return {ok:false,error:'Resposta inválida'}});if(!r.ok||b.ok===false)throw new Error(b.error||'Erro');return b})}function selectedMode(){var v=adapter.value;photoBox.classList.toggle('hidden',v==='text_to_image'||v==='catalog_only');maskBox.classList.toggle('hidden',v!=='inpaint');}
 function renderCatalog(){var q=search.value.toLowerCase().trim(),arr=models.filter(function(m){return !q||JSON.stringify(m).toLowerCase().includes(q)});catalogEl.innerHTML=arr.length?arr.map(function(m,i){return '<div class="model"><b>'+esc(m.name)+'</b><span class="tag">'+esc(m.adapter)+'</span><span class="tag">'+esc((m.tasks||[]).join(', ')||'tipo não informado')+'</span><div class="small">'+esc(m.modelId)+'<br>'+esc(m.description||'')+'</div><button data-i="'+models.indexOf(m)+'" class="pick subbtn" type="button">Selecionar</button></div>'}).join(''):'Nenhum modelo encontrado.';Array.prototype.forEach.call(document.querySelectorAll('.pick'),function(b){b.onclick=function(){select(models[Number(b.dataset.i)])}})}
 function select(m){chosen=m;lastTest=null;work.classList.remove('hidden');chosenName.textContent=m.name;chosenMeta.textContent=m.modelId+' · '+(m.provider||'sem fornecedor informado')+' · '+(m.tasks||[]).join(', ');adapter.value=m.adapter||'catalog_only';selectedMode();window.scrollTo({top:work.offsetTop-10,behavior:'smooth'})}
+
+function fillManualStable(){
+  document.getElementById('manualModelId').value='@cf/runwayml/stable-diffusion-v1-5-inpainting'
+  document.getElementById('manualModelName').value='Stable Diffusion v1.5 Inpainting'
+  document.getElementById('manualAdapter').value='inpaint'
+  note('Stable Diffusion v1.5 Inpainting preenchido. Toque em Selecionar modelo manual.','ok')
+}
+
+function selectManualModel(){
+  var manualId=document.getElementById('manualModelId').value.trim()
+  var manualName=document.getElementById('manualModelName').value.trim()
+  var manualAdapter=document.getElementById('manualAdapter').value
+
+  if(!manualId){
+    note('Digite ou preencha o ID técnico do modelo.','err')
+    return
+  }
+
+  if(/\s/.test(manualId)){
+    note('O ID técnico não pode ter espaços.','err')
+    return
+  }
+
+  select({
+    modelId:manualId,
+    name:manualName||manualId,
+    description:'Modelo incluído manualmente no Laboratório.',
+    tasks:['manual'],
+    provider:'Manual',
+    adapter:manualAdapter
+  })
+
+  note('Modelo manual selecionado. Agora escolha foto, máscara e pedido para testar.','ok')
+}
+
 async function catalog(refresh){note('Carregando catálogo…','ok');var b=await (refresh?api('/laboratorio-ia/catalogo/atualizar',{method:'POST'}):api('/laboratorio-ia/catalogo'));models=b.catalog.imageModels||[];renderCatalog();note('Catálogo pronto: '+models.length+' modelos de imagem.','ok')}
 async function library(){if(!key.value.trim()){libraryEl.textContent='Digite e guarde a senha para abrir a biblioteca.';return}var b=await api('/laboratorio-ia/biblioteca');var arr=b.library.models||[];libraryEl.innerHTML=arr.length?arr.map(function(m){return '<div class="libraryitem"><b>'+esc(m.name)+'</b><div>'+esc(m.modelId)+'</div><span class="tag">'+esc(m.adapter)+'</span>'+ (m.appEnabled?'<span class="tag">app: '+esc(m.appSlot)+'</span>':'')+'<button class="del danger" data-id="'+esc(m.modelId)+'" type="button">Remover da biblioteca</button></div>'}).join(''):'Nenhum modelo aprovado ainda.';Array.prototype.forEach.call(document.querySelectorAll('.del'),function(b){b.onclick=async function(){if(!confirm('Remover este modelo da biblioteca?'))return;try{await api('/laboratorio-ia/biblioteca',{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({modelId:b.dataset.id})});await library();note('Modelo removido.','ok')}catch(e){note(e.message,'err')}}})}
 function redraw(){if(!source.width)return;var c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.drawImage(source,0,0);c.drawImage(overlay,0,0)}function resetMask(){if(!source.width)return;var mc=mask.getContext('2d');mc.fillStyle='#000';mc.fillRect(0,0,mask.width,mask.height);overlay.getContext('2d').clearRect(0,0,overlay.width,overlay.height);painted=false;redraw()}async function loadPhoto(){var f=photo.files[0];if(!f)return;var bm=await createImageBitmap(f);var sc=Math.min(1024/bm.width,1024/bm.height,1),w=Math.round(bm.width*sc),h=Math.round(bm.height*sc);[source,mask,overlay,canvas].forEach(function(c){c.width=w;c.height=h});source.getContext('2d').drawImage(bm,0,0,w,h);resetMask()}function point(e){var r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}function stroke(a,b){var w=Number(brush.value)*canvas.width/Math.max(1,canvas.clientWidth);[[mask.getContext('2d'),'#fff'],[overlay.getContext('2d'),'rgba(255,45,45,.55)']].forEach(function(p){p[0].strokeStyle=p[1];p[0].lineWidth=w;p[0].lineCap='round';p[0].beginPath();p[0].moveTo(a.x,a.y);p[0].lineTo(b.x,b.y);p[0].stroke()});painted=true;redraw()}
 canvas.onpointerdown=function(e){if(adapter.value!=='inpaint'||!source.width)return;draw=true;last=point(e);canvas.setPointerCapture(e.pointerId);stroke(last,last)};canvas.onpointermove=function(e){if(!draw)return;var n=point(e);stroke(last,n);last=n};canvas.onpointerup=canvas.onpointercancel=function(){draw=false;last=null};photo.onchange=function(){loadPhoto().catch(function(e){note(e.message,'err')})};document.getElementById('clearMask').onclick=resetMask;adapter.onchange=selectedMode;search.oninput=renderCatalog;
 function blob(c,t,q){return new Promise(function(ok){c.toBlob(ok,t,q)})}async function test(){if(!chosen)throw new Error('Selecione uma IA no catálogo.');if(adapter.value==='catalog_only')throw new Error('Este modelo não tem adaptador de teste nesta primeira versão. Salve na biblioteca apenas depois que definirmos a integração dele.');if(!prompt.value.trim())throw new Error('Escreva um pedido.');if(adapter.value!=='text_to_image'&&!photo.files[0])throw new Error('Escolha uma foto.');if(adapter.value==='inpaint'&&!painted)throw new Error('Pinte os objetos que podem ser alterados na máscara.');var d=new FormData();d.append('modelId',chosen.modelId);d.append('adapter',adapter.value);d.append('prompt',prompt.value);d.append('negativePrompt',negative.value);d.append('width',width.value);d.append('height',height.value);d.append('steps',steps.value);d.append('guidance',guidance.value);d.append('strength',strength.value);if(adapter.value==='inpaint'){d.append('photo',await blob(source,'image/jpeg',.92),'foto.jpg');d.append('mask',await blob(mask,'image/png'),'mascara.png')}else if(adapter.value!=='text_to_image'){d.append('photo',photo.files[0])}var b=await api('/laboratorio-ia/testar',{method:'POST',body:d});lastTest=b;result.innerHTML='<div class="card"><img class="result" src="'+esc(b.imageUrl)+'"><div class="small">Modelo: '+esc(b.modelId)+'\\nAdaptador: '+esc(b.adapter)+'\\nTeste: '+esc(b.id)+'</div></div>';note('Teste concluído. Revise o resultado e, se aprovar, salve na biblioteca.','ok')}
 async function approve(){if(!chosen)throw new Error('Selecione uma IA.');var p={modelId:chosen.modelId,name:chosen.name,description:chosen.description,tasks:chosen.tasks,provider:chosen.provider,adapter:adapter.value,appEnabled:enableApp.checked,appSlot:slot.value,settings:{width:width.value,height:height.value,steps:steps.value,guidance:guidance.value,strength:strength.value},lastTest:lastTest};var b=await api('/laboratorio-ia/biblioteca',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(p)});await library();note('Salvo na biblioteca: '+b.entry.name,'ok')}
- document.getElementById('saveKey').onclick=async function(){if(!key.value.trim()){note('Digite a senha do laboratório antes de guardar.','err');return}sessionStorage.setItem('movimovelLabKey',key.value);note('Senha guardada. Verificando acesso à biblioteca…','ok');try{await library();note('Senha aceita. Agora toque em Atualizar catálogo Cloudflare.','ok')}catch(e){libraryEl.textContent='Não foi possível abrir a biblioteca.';note(e.message,'err')}};key.value=sessionStorage.getItem('movimovelLabKey')||'';document.getElementById('refresh').onclick=function(){catalog(true).catch(function(e){note(e.message,'err')})};document.getElementById('loadCatalog').onclick=function(){catalog(false).catch(function(e){note(e.message,'err')})};document.getElementById('test').onclick=function(){note('Gerando teste real…','ok');test().catch(function(e){note(e.message,'err')})};document.getElementById('approve').onclick=function(){approve().catch(function(e){note(e.message,'err')})};if(key.value.trim()){library().catch(function(e){libraryEl.textContent='Não foi possível abrir a biblioteca.';note(e.message,'err')})}else{libraryEl.textContent='Digite e guarde a senha para abrir a biblioteca.'}
+
+document.getElementById('manualStable').onclick=function(){
+  fillManualStable()
+}
+
+document.getElementById('manualSelect').onclick=function(){
+  selectManualModel()
+}
+
+document.getElementById('saveKey').onclick=async function(){if(!key.value.trim()){note('Digite a senha do laboratório antes de guardar.','err');return}sessionStorage.setItem('movimovelLabKey',key.value);note('Senha guardada. Verificando acesso à biblioteca…','ok');try{await library();note('Senha aceita. Agora toque em Atualizar catálogo Cloudflare.','ok')}catch(e){libraryEl.textContent='Não foi possível abrir a biblioteca.';note(e.message,'err')}};key.value=sessionStorage.getItem('movimovelLabKey')||'';document.getElementById('refresh').onclick=function(){catalog(true).catch(function(e){note(e.message,'err')})};document.getElementById('loadCatalog').onclick=function(){catalog(false).catch(function(e){note(e.message,'err')})};document.getElementById('test').onclick=function(){note('Gerando teste real…','ok');test().catch(function(e){note(e.message,'err')})};document.getElementById('approve').onclick=function(){approve().catch(function(e){note(e.message,'err')})};if(key.value.trim()){library().catch(function(e){libraryEl.textContent='Não foi possível abrir a biblioteca.';note(e.message,'err')})}else{libraryEl.textContent='Digite e guarde a senha para abrir a biblioteca.'}
 })();</script></body></html>`
 }
 
