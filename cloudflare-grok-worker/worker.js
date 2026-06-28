@@ -1288,6 +1288,78 @@ async function labSaveGeneratedImage(env, bytes, mimeType, modelId, adapter) {
   return key
 }
 
+
+// MOVIMOVEL_PIMAGE_EDIT_V1
+function labPImageAspectRatio(bytes) {
+  const size = labImageDimensions(bytes)
+
+  if (!size?.width || !size?.height) return "1:1"
+
+  const ratio = size.width / size.height
+
+  if (ratio >= 1.6) return "16:9"
+  if (ratio >= 1.25) return "4:3"
+  if (ratio <= 0.65) return "9:16"
+  if (ratio <= 0.82) return "3:4"
+
+  return "1:1"
+}
+
+async function labRunPImageEdit(env, modelId, photoBytes, photoMime, prompt, options) {
+  if (!env.AI || typeof env.AI.run !== "function") {
+    throw new Error("Workers AI (binding AI) não está configurado no Worker.")
+  }
+
+  const safeMime = normalizeImageMimeType(photoMime)
+  const dataUri = `data:${safeMime};base64,${bytesToBase64(photoBytes)}`
+
+  const input = {
+    prompt,
+    images: [dataUri],
+    aspect_ratio: labPImageAspectRatio(photoBytes),
+    output_format: "jpg",
+    output_quality: 95
+  }
+
+  const output = await env.AI.run(modelId, input)
+
+  const imageUrl = String(
+    output?.result?.image ||
+    output?.image ||
+    output?.result?.output ||
+    ""
+  ).trim()
+
+  if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
+    throw new Error(
+      "P-Image-Edit respondeu, mas não retornou uma URL de imagem."
+    )
+  }
+
+  const downloaded = await fetch(imageUrl)
+
+  if (!downloaded.ok) {
+    throw new Error(
+      `Não foi possível baixar a imagem retornada pelo P-Image-Edit. HTTP ${downloaded.status}.`
+    )
+  }
+
+  const bytes = new Uint8Array(await downloaded.arrayBuffer())
+
+  if (bytes.byteLength < 100) {
+    throw new Error("P-Image-Edit retornou uma imagem vazia ou inválida.")
+  }
+
+  return {
+    bytes,
+    mimeType: labDetectImageMimeType(
+      bytes,
+      downloaded.headers.get("content-type") || "image/jpeg"
+    ),
+    size: labImageDimensions(photoBytes)
+  }
+}
+
 async function labRunTest(request, env, origin) {
   const form = await request.formData()
   const modelId = labSafeModelId(form.get("modelId"))
@@ -1325,10 +1397,27 @@ async function labRunTest(request, env, origin) {
   } else if (adapter === "image_to_image_json") {
     const photo = labGetFile(form, "photo", true)
     const bytes = await labBytesFromFile(photo)
-    const input = { prompt, image: Array.from(bytes) }
-    if (negativePrompt) input.negative_prompt = negativePrompt
-    if (form.get("strength")) input.strength = Math.min(1, Math.max(0, Number(form.get("strength")) || 0.45))
-    output = await labRunJsonModel(env, modelId, input)
+
+    if (modelId.toLowerCase() === "pruna/p-image-edit") {
+      output = await labRunPImageEdit(
+        env,
+        modelId,
+        bytes,
+        photo.type,
+        prompt,
+        options
+      )
+    } else {
+      const input = { prompt, image: Array.from(bytes) }
+      if (negativePrompt) input.negative_prompt = negativePrompt
+      if (form.get("strength")) {
+        input.strength = Math.min(
+          1,
+          Math.max(0, Number(form.get("strength")) || 0.45)
+        )
+      }
+      output = await labRunJsonModel(env, modelId, input)
+    }
   } else {
     throw new Error("Adaptador inválido.")
   }
