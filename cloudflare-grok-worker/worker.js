@@ -1150,36 +1150,21 @@ function labExtractBase64Image(body) {
 }
 
 async function labRunJsonModel(env, modelId, input) {
-  const token = labModelToken(env)
-  const accountId = labText(env.CLOUDFLARE_ACCOUNT_ID)
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelId}`
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(input)
-  })
-
-  const contentType = labText(response.headers.get("content-type")).toLowerCase()
-  if (!response.ok) {
-    const detail = await response.text()
-    throw new Error(`Cloudflare retornou HTTP ${response.status}: ${detail.slice(0, 500)}`)
+  if (!env.AI || typeof env.AI.run !== "function") {
+    throw new Error("Workers AI (binding AI) não está configurado no Worker.")
   }
 
-  if (contentType.startsWith("image/")) {
-    return { bytes: new Uint8Array(await response.arrayBuffer()), mimeType: contentType }
-  }
-
-  const body = await response.json().catch(() => null)
+  const body = await env.AI.run(modelId, input)
   const imageBase64 = labExtractBase64Image(body)
+
   if (!imageBase64) {
     throw new Error("O modelo respondeu, mas não retornou imagem neste modo. Escolha outro adaptador ou verifique o modelo.")
   }
 
-  return { bytes: decodeBase64ToBytes(imageBase64), mimeType: "image/jpeg" }
+  return {
+    bytes: decodeBase64ToBytes(imageBase64),
+    mimeType: "image/jpeg"
+  }
 }
 
 async function labRunFluxReference(env, modelId, photoBytes, photoMime, prompt, options) {
